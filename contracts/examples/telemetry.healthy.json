@@ -1,0 +1,28 @@
+{
+  "eventId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "eventType": "factory.telemetry",
+  "schemaVersion": 1,
+  "equipmentId": "eq-001",
+  "eventTimeUtc": "2026-09-15T04:00:00.100Z",
+  "ingestTimeUtc": "2026-09-15T04:00:00.118Z",
+  "occurredAtUtc": "2026-09-15T04:00:00.100Z",
+  "sequence": 123456,
+  "producer": "edge-gateway@gw-1",
+  "sourceProtocol": "OPC_UA",
+  "quality": {
+    "overall": "GOOD",
+    "flags": []
+  },
+  "measurements": {
+    "temperatureC": 48.2,
+    "vibrationRms": 2.9,
+    "currentA": 12.1,
+    "voltageV": 400.3,
+    "rpm": 1780.0,
+    "torqueNm": 42.4,
+    "operationRatePct": 100.0
+  },
+  "equipmentState": "RUNNING",
+  "correlationId": "9c1f6d2a-7b3e-4a51-8f2d-2c4b6e8a0d11",
+  "causationId": null
+}

@@ -1,0 +1,42 @@
+{
+  "eventId": "a1c2e3f4-5678-49ab-8cde-f01234567890",
+  "eventType": "factory.prediction",
+  "schemaVersion": 1,
+  "predictionId": "c9b8a7d6-1234-4e5f-9a8b-7c6d5e4f3a21",
+  "equipmentId": "eq-001",
+  "predictedAtUtc": "2026-09-15T04:00:05.000Z",
+  "occurredAtUtc": "2026-09-15T04:00:05.000Z",
+  "ingestTimeUtc": "2026-09-15T04:00:05.031Z",
+  "producer": "prediction-service@pred-1",
+  "model": {
+    "name": "bearing-health",
+    "version": "1.4.0",
+    "runId": "mlflow-run-8a7b6c5d",
+    "deploymentStage": "PRODUCTION",
+    "featureSchemaVersion": 3
+  },
+  "featureWindow": {
+    "windowId": "0f1e2d3c-4b5a-4698-8877-665544332211",
+    "startUtc": "2026-09-15T03:59:05.000Z",
+    "endUtc": "2026-09-15T04:00:05.000Z",
+    "validSampleRatio": {
+      "temperatureC": 1.0,
+      "vibrationRms": 0.99,
+      "currentA": 1.0,
+      "rpm": 1.0,
+      "operationRatePct": 1.0,
+      "voltageV": 1.0,
+      "torqueNm": 0.98
+    }
+  },
+  "outputs": {
+    "anomalyScore": 0.84,
+    "failureProbability": 0.71,
+    "rulMinutes": 380,
+    "confidence": 0.92,
+    "oodScore": 0.12,
+    "recommendedOperationRatePct": 70.0
+  },
+  "correlationId": "9c1f6d2a-7b3e-4a51-8f2d-2c4b6e8a0d11",
+  "causationId": "0f1e2d3c-4b5a-4698-8877-665544332211"
+}

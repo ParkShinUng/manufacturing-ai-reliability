@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/envelope.schema.json",
+  "title": "MairEventEnvelopeV1",
+  "description": "Minimal common envelope (DEC-007). NOTE: `sequence` is deliberately NOT in the envelope - it appears only where a consumer genuinely needs gap/order detection, with an explicit scope. A universal sequence field would invite false cross-producer ordering assumptions.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAtUtc",
+    "ingestTimeUtc",
+    "producer",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "equipmentId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^eq-[0-9]{3,6}$"
+    },
+    "occurredAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingestTimeUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Producing service identity. Retained in the envelope because the causationId chain cannot be audited across services without it (NFR-002)."
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

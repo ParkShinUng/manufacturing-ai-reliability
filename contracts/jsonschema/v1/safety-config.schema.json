@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/safety-config.schema.json",
+  "title": "MairSafetyConfigurationV1",
+  "description": "Safety configuration owned by control-service. Validated at STARTUP with fail-closed semantics: an invalid or incomplete config aborts startup rather than starting with defaults (NFR-014). There are no implicit per-equipment defaults - a deployed equipment absent from `equipment` is invalid config. Cross-field invariants SC-01..SC-10 are in docs/03-contracts/SAFETY_CONFIGURATION.md and are enforced in addition to this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "defaults",
+    "control",
+    "authorization",
+    "equipmentClasses",
+    "equipment"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fallbackRatePct",
+        "aiAuthorizedMinPct",
+        "aiAuthorizedMaxPct",
+        "maxDeltaPerDecisionPp",
+        "rateBudgetPp",
+        "rateBudgetWindowSec",
+        "telemetryFreshnessMs",
+        "predictionTtlMs",
+        "clockSkewBudgetMs"
+      ],
+      "properties": {
+        "fallbackRatePct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "aiAuthorizedMinPct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "aiAuthorizedMaxPct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "maxDeltaPerDecisionPp": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        },
+        "rateBudgetPp": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        },
+        "rateBudgetWindowSec": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "telemetryFreshnessMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "predictionTtlMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "clockSkewBudgetMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supervisorSilenceTimeoutMs",
+        "commandTtlMs",
+        "leaseDurationMs",
+        "heartbeatIntervalMs",
+        "idempotencyRetentionMin",
+        "credentialRotationGraceSec",
+        "deadmanTimeoutMs"
+      ],
+      "properties": {
+        "supervisorSilenceTimeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "SC-02: must exceed predictionTtlMs plus the gRPC command budget."
+        },
+        "commandTtlMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "SC-01: MUST be less than the inference cadence. This is the structural guarantee behind ADR-0013, not a tuning knob."
+        },
+        "leaseDurationMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "heartbeatIntervalMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "idempotencyRetentionMin": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "credentialRotationGraceSec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deadmanTimeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "SC-03: must exceed supervisorSilenceTimeoutMs so L3 acts only after L2 has failed."
+        }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "watermarkTimeoutMs",
+        "maxAuthorizationStalenessMs"
+      ],
+      "properties": {
+        "watermarkTimeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "SC-07: at least 3x the watermark interval."
+        },
+        "maxAuthorizationStalenessMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Set to 60000 ms by human decision HD-001 (2026-09-15). Bounds how long a possibly-quarantined model may retain control authority when Kafka is unreachable. Changing it requires a new human decision, not an engineering judgement."
+        },
+        "_comment_maxAuthorizationStalenessMs": {
+          "type": "string",
+          "description": "Optional annotation marking a value as pending human approval. Advisory only; never read at runtime."
+        }
+      }
+    },
+    "equipmentClasses": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "absoluteMinRatePct",
+          "absoluteMaxRatePct",
+          "fallbackRatePct",
+          "safetyRequiredChannels",
+          "advisoryChannels"
+        ],
+        "properties": {
+          "absoluteMinRatePct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "absoluteMaxRatePct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "fallbackRatePct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "aiAuthorizedMinPct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "aiAuthorizedMaxPct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "maxDeltaPerDecisionPp": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "rateBudgetPp": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "safetyRequiredChannels": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "temperatureC",
+                "vibrationRms",
+                "currentA",
+                "voltageV",
+                "rpm",
+                "torqueNm",
+                "operationRatePct"
+              ]
+            }
+          },
+          "advisoryChannels": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "temperatureC",
+                "vibrationRms",
+                "currentA",
+                "voltageV",
+                "rpm",
+                "torqueNm",
+                "operationRatePct"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "equipment": {
+      "type": "array",
+      "minItems": 1,
+      "description": "EVERY deployed equipment must be listed. An unlisted equipment is invalid config and aborts startup - never an implicit default.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "class"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^eq-[0-9]{3,6}$"
+          },
+          "class": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

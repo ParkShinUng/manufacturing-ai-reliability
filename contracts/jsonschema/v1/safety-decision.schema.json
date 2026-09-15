@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/safety-decision.schema.json",
+  "title": "FactorySafetyDecisionV1",
+  "description": "Deterministic safety gate evaluation result. Topic: factory.safety-decisions.v1, key: equipmentId. Produced exclusively by safety-supervisor. Every accepted AND rejected recommendation produces one of these (FR-032). AI rejection is an expected system state, not an error.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "decisionId",
+    "equipmentId",
+    "decidedAtUtc",
+    "occurredAtUtc",
+    "producer",
+    "decision",
+    "gateResults",
+    "reasonCodes",
+    "correlationId",
+    "causationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "factory.safety-decision"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "decisionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "equipmentId": {
+      "type": "string",
+      "pattern": "^eq-[0-9]{3,6}$"
+    },
+    "predictionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid",
+      "description": "Null when the decision was made with no prediction available (AI_UNAVAILABLE path)."
+    },
+    "sourcePredictionAtUtc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "predictedAtUtc of the source prediction. Carried into the command for AUDIT and for the SECONDARY supersession guard in Control Service. It is NOT the primary ordering mechanism (ADR-0013): ordering correctness rests on 2s command TTL < 5s inference cadence plus epoch fencing. The guard's failure mode under a clock step is asymmetric and safe - it can only reject a valid command, never accept a stale one."
+    },
+    "decidedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "occurredAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "enum": [
+        "ACCEPT",
+        "REJECT",
+        "FALLBACK"
+      ],
+      "description": "ACCEPT: a bounded command intent is issued. REJECT: no command; equipment holds current mode. FALLBACK: a command driving to the configured fallback rate is issued."
+    },
+    "controlMode": {
+      "enum": [
+        "NORMAL_RULE",
+        "AI_ASSISTED",
+        "SAFE_FALLBACK",
+        "STOP_REQUIRED"
+      ],
+      "description": "Mode the Supervisor believes is active. Control Service is authoritative (CONTROL_MODE_STATE_MACHINE.md 1); a mismatch is reconciled in favour of Control Service."
+    },
+    "gateResults": {
+      "type": "array",
+      "description": "Result of EVERY gate, in the canonical order of AI_SAFETY_AND_MLOPS.md section 2. Exactly 13 entries: evaluation short-circuits the DECISION at the first failure but is exhaustive for the RECORD, so a rejection is diagnosable rather than merely asserted. prefixItems pins the order; a reordered or truncated list is a contract violation.",
+      "minItems": 13,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gate",
+          "passed"
+        ],
+        "properties": {
+          "gate": {
+            "enum": [
+              "SUPERVISOR_HEALTHY",
+              "MODEL_AUTHORIZED",
+              "PREDICTION_FRESH",
+              "PREDICTION_ORDERED",
+              "TELEMETRY_FRESH",
+              "TELEMETRY_QUALITY",
+              "FEATURE_COMPLETE",
+              "OOD",
+              "CONFIDENCE",
+              "EQUIPMENT_STATE_ELIGIBLE",
+              "RATE_OF_CHANGE",
+              "RATE_BUDGET",
+              "OPERATING_BOUNDS"
+            ]
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "observedValue": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "maxItems": 13,
+      "prefixItems": [
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "SUPERVISOR_HEALTHY"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "MODEL_AUTHORIZED"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "PREDICTION_FRESH"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "PREDICTION_ORDERED"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "TELEMETRY_FRESH"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "TELEMETRY_QUALITY"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "FEATURE_COMPLETE"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "OOD"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "CONFIDENCE"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "EQUIPMENT_STATE_ELIGIBLE"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "RATE_OF_CHANGE"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "RATE_BUDGET"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gate": {
+              "const": "OPERATING_BOUNDS"
+            }
+          },
+          "required": [
+            "gate"
+          ]
+        }
+      ]
+    },
+    "reasonCodes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Stable low-cardinality codes, safe as metric labels (REASON_CODES.md).",
+      "items": {
+        "enum": [
+          "AI_ACCEPTED",
+          "AI_UNAVAILABLE",
+          "MODEL_NOT_PRODUCTION",
+          "MODEL_QUARANTINED",
+          "MODEL_STAGE_UNAUTHORIZED",
+          "MODEL_AUTHORIZATION_STALE",
+          "FEATURE_SCHEMA_MISMATCH",
+          "PREDICTION_STALE",
+          "PREDICTION_SUPERSEDED",
+          "PREDICTION_UNPARSEABLE",
+          "TELEMETRY_STALE",
+          "SENSOR_QUALITY_BAD",
+          "FEATURE_INCOMPLETE",
+          "FEATURE_WINDOW_INSUFFICIENT",
+          "OOD_HIGH",
+          "CONFIDENCE_LOW",
+          "EQUIPMENT_STATE_INELIGIBLE",
+          "RATE_CHANGE_CLAMPED",
+          "RATE_BUDGET_EXHAUSTED",
+          "OPERATING_BOUND_VIOLATION",
+          "FALLBACK_POLICY_ACTIVE",
+          "SUPERVISOR_UNHEALTHY"
+        ]
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Present when a prediction was evaluated. Records BOTH the AI's request and the bounded result, so clamping is auditable as a modification of AI intent (DEC-003 / GAP-033).",
+      "required": [
+        "requestedOperationRatePct",
+        "boundedOperationRatePct",
+        "wasClamped"
+      ],
+      "properties": {
+        "requestedOperationRatePct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "boundedOperationRatePct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "wasClamped": {
+          "type": "boolean"
+        },
+        "baselineOperationRatePct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "The last ACCEPTED COMMANDED setpoint used as the rate-of-change baseline. Deliberately not the last applied value, which lags during the drive slew (EQUIPMENT_MODEL_AND_STATE.md 1.4)."
+        },
+        "rateBudgetRemainingPp": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Remaining cumulative movement in the 60s rolling window, of 25pp."
+        }
+      }
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid",
+      "description": "The predictionId that caused this decision; null on the AI_UNAVAILABLE path."
+    }
+  }
+}

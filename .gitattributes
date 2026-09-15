@@ -1,0 +1,39 @@
+# Normalise line endings so the repository is stable across Windows, Linux, and CI.
+# Authored on Windows; the contracts and verification scripts must behave identically
+# on a Linux runner, and a CRLF/LF flip would otherwise show as a whole-file diff.
+* text=auto eol=lf
+
+# Contracts are the authoritative artifacts (ADR-0017). Pin them explicitly so no
+# future tooling change can renegotiate their encoding.
+*.json      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.proto     text eol=lf
+*.md        text eol=lf
+*.mjs       text eol=lf
+*.js        text eol=lf
+*.ts        text eol=lf
+*.cs        text eol=lf
+*.py        text eol=lf
+*.sql       text eol=lf
+*.sh        text eol=lf eol=lf
+
+# Windows-only tooling keeps CRLF, or PowerShell can misparse it.
+*.ps1       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Binary - never diff, never normalise.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.pdf       binary
+*.zip       binary
+*.parquet   binary
+*.onnx      binary
+*.pkl       binary
+
+# Generated or vendored content excluded from GitHub's language statistics, so the
+# repository is reported by what was authored rather than by what was generated.
+contracts/examples/** linguist-generated=true

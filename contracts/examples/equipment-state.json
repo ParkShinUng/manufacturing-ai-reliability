@@ -1,0 +1,21 @@
+{
+  "eventId": "e1e2e3e4-0001-4aaa-8bbb-cccccccccccc",
+  "eventType": "factory.equipment-state",
+  "schemaVersion": 1,
+  "equipmentId": "eq-001",
+  "state": "DEGRADED",
+  "previousState": "RUNNING",
+  "transitionId": "T7",
+  "stateSequence": 87,
+  "observedBy": "edge-gateway@gw-1",
+  "aiEligible": false,
+  "activeConditions": [
+    "VIBRATION_HIGH",
+    "QUALITY_UNCERTAIN"
+  ],
+  "occurredAtUtc": "2026-09-15T04:03:11.480Z",
+  "ingestTimeUtc": "2026-09-15T04:03:11.492Z",
+  "producer": "edge-gateway@gw-1",
+  "correlationId": "1d4e7a90-5c2b-4f88-b3a6-7e9c0f1a2b33",
+  "causationId": null
+}

@@ -1,0 +1,13 @@
+{
+  "eventId": "a9a8a7a6-0003-4eee-8fff-111111111111",
+  "eventType": "factory.model-authorization",
+  "schemaVersion": 1,
+  "recordType": "WATERMARK",
+  "authorizationSequence": 18,
+  "occurredAtUtc": "2026-09-15T04:10:30.000Z",
+  "ingestTimeUtc": "2026-09-15T04:10:30.012Z",
+  "producer": "mlops-publisher@mlops-1",
+  "correlationId": "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8092",
+  "causationId": null,
+  "partitionKey": "__watermark__"
+}

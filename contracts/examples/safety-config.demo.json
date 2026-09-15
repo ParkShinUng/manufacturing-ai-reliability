@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "defaults": {
+    "fallbackRatePct": 60.0,
+    "aiAuthorizedMinPct": 60.0,
+    "aiAuthorizedMaxPct": 100.0,
+    "maxDeltaPerDecisionPp": 10.0,
+    "rateBudgetPp": 25.0,
+    "rateBudgetWindowSec": 60,
+    "telemetryFreshnessMs": 2000,
+    "predictionTtlMs": 10000,
+    "clockSkewBudgetMs": 250
+  },
+  "control": {
+    "supervisorSilenceTimeoutMs": 12000,
+    "commandTtlMs": 2000,
+    "leaseDurationMs": 30000,
+    "heartbeatIntervalMs": 3000,
+    "idempotencyRetentionMin": 15,
+    "credentialRotationGraceSec": 300,
+    "deadmanTimeoutMs": 30000
+  },
+  "authorization": {
+    "_comment_maxAuthorizationStalenessMs": "HD-001 - APPROVED by the product owner on 2026-09-15. 60000 ms bounds how long a possibly quarantined model may retain control authority when Kafka is unreachable. Changing this value requires a new human decision.",
+    "watermarkTimeoutMs": 90000,
+    "maxAuthorizationStalenessMs": 60000
+  },
+  "equipmentClasses": {
+    "conveyor-drive-v1": {
+      "absoluteMinRatePct": 0.0,
+      "absoluteMaxRatePct": 100.0,
+      "fallbackRatePct": 60.0,
+      "aiAuthorizedMinPct": 60.0,
+      "aiAuthorizedMaxPct": 100.0,
+      "maxDeltaPerDecisionPp": 10.0,
+      "rateBudgetPp": 25.0,
+      "safetyRequiredChannels": [
+        "vibrationRms",
+        "temperatureC",
+        "currentA",
+        "rpm",
+        "operationRatePct"
+      ],
+      "advisoryChannels": [
+        "torqueNm",
+        "voltageV"
+      ]
+    }
+  },
+  "equipment": [
+    {
+      "id": "eq-001",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-002",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-003",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-004",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-005",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-006",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-007",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-008",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-009",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-010",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-011",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-012",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-013",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-014",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-015",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-016",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-017",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-018",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-019",
+      "class": "conveyor-drive-v1"
+    },
+    {
+      "id": "eq-020",
+      "class": "conveyor-drive-v1"
+    }
+  ]
+}

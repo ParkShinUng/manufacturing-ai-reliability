@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/model-authorization.schema.json",
+  "title": "FactoryModelAuthorizationV1",
+  "description": "Model authorization / quarantine record, and the periodic liveness watermark. Topic: factory.model-deployments.v1, key: modelName, COMPACTED, infinite retention. Produced exclusively by mlops-publisher. The Safety Supervisor consumes this and NEVER calls MLflow on the decision path (DEC-009), so an MLflow outage has zero effect on the safety path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "recordType",
+    "occurredAtUtc",
+    "ingestTimeUtc",
+    "producer",
+    "authorizationSequence",
+    "correlationId",
+    "partitionKey"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "factory.model-authorization"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordType": {
+      "enum": [
+        "AUTHORIZATION",
+        "WATERMARK"
+      ],
+      "description": "WATERMARK is emitted every 30s even when nothing changed. Without it, a dead mlops-publisher is indistinguishable from 'no changes' - Kafka stays reachable and simply quiet - which would let a quarantine fail to propagate silently. The Supervisor treats all models as unauthorized if no watermark arrives for 90s (3 missed)."
+    },
+    "modelName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "modelVersion": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "modelRunId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "deploymentStage": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "SHADOW",
+        "CANARY",
+        "PRODUCTION",
+        "ARCHIVED",
+        null
+      ]
+    },
+    "quarantined": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "oodThreshold": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "confidenceThreshold": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "featureSchemaVersion": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "authorizedEquipmentCohort": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "pattern": "^eq-[0-9]{3,6}$"
+      },
+      "description": "Explicit equipment IDs for CANARY authority (ADR-0010). Null or absent for PRODUCTION means all equipment."
+    },
+    "authorizationSequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Strictly monotonic per modelName, assigned by mlops-publisher. Lets the Supervisor detect a regression in compacted replay order."
+    },
+    "issuedAtUtc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "validUntilUtc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "occurredAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingestTimeUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "partitionKey": {
+      "type": "string",
+      "description": "Kafka message key, contracted explicitly because this topic is COMPACTED. AUTHORIZATION records use the modelName. WATERMARK records use the sentinel '__watermark__' so that liveness records survive compaction as a single retained row and never collide with, or compact away, a model's authorization."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "recordType": {
+            "const": "AUTHORIZATION"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "modelName",
+          "modelVersion",
+          "modelRunId",
+          "deploymentStage",
+          "quarantined",
+          "oodThreshold",
+          "confidenceThreshold",
+          "featureSchemaVersion"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "recordType": {
+            "const": "WATERMARK"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "partitionKey": {
+            "const": "__watermark__"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "recordType": {
+            "const": "AUTHORIZATION"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "partitionKey": {
+            "not": {
+              "const": "__watermark__"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

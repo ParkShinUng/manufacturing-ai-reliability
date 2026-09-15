@@ -1,0 +1,204 @@
+syntax = "proto3";
+package mair.control.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Manufacturing AI Reliability Platform equipment control contract, v1 (specification v0.3).
+//
+// Authority model (DEC-001, three layers):
+//   L1 Safety Supervisor  - proposes bounded setpoints. No equipment credentials.
+//   L2 Control Service    - SOLE APPLICATION WRITER to equipment. Owns control mode,
+//                           control epoch, ordering, idempotency, and the fallback watchdog.
+//   L3 Equipment          - self-protection trips and dead-man revert. Survives total platform loss.
+//
+// Ordering (DEC-003, revised after Codex round 2):
+//   Ordering is NOT derived from producer wall-clock timestamps, which are not monotonic across
+//   restart, consumer-group rebalance, or a backward clock step. Instead:
+//     (a) command validity is SHORTER than the minimum inter-command interval, so two commands for
+//         one equipment can never be concurrently valid;
+//     (b) the Supervisor keeps at most one outstanding command per equipment;
+//     (c) control_epoch fences any command issued under a superseded lease.
+//   Together these make arrival-order processing safe without any distributed counter.
+
+service EquipmentControl {
+  // Acquire or renew the control lease for a set of equipment. A Supervisor MUST hold a valid
+  // lease before ApplyCommand will be accepted. Acquiring a lease increments control_epoch,
+  // which invalidates every command issued under the previous epoch.
+  rpc AcquireControlLease (AcquireControlLeaseRequest) returns (AcquireControlLeaseResponse);
+
+  // Liveness signal. Resets the Control Service fallback watchdog for the named equipment.
+  // Absence of this signal for supervisor_silence_timeout (12s) causes the Control Service to
+  // drive the equipment to the configured fallback rate and increment control_epoch.
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+
+  rpc ApplyCommand (ApplyCommandRequest) returns (ApplyCommandResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Lease
+// ---------------------------------------------------------------------------
+
+message AcquireControlLeaseRequest {
+  // Supervisor instance identity. Informational only: the AUTHENTICATED identity is taken from
+  // the verified mTLS peer certificate, never from this field (DEC-006).
+  string supervisor_instance_id = 1;
+  repeated string equipment_ids = 2;
+  string correlation_id = 3;
+}
+
+message AcquireControlLeaseResponse {
+  repeated EquipmentLease leases = 1;
+  string correlation_id = 2;
+}
+
+message EquipmentLease {
+  string equipment_id = 1;
+
+  // Strictly monotonic per equipment, owned and persisted by Control Service.
+  // MUST be durably committed BEFORE any equipment write that increments it, so that a
+  // Control Service restart can never re-issue an epoch a Supervisor already observed.
+  uint64 control_epoch = 2;
+
+  // Lease expiry. A Supervisor MUST renew before this or its commands are fenced.
+  google.protobuf.Timestamp lease_expires_at = 3;
+
+  // Mode as of lease grant. Control Service is authoritative for mode.
+  ControlMode current_mode = 4;
+
+  // Last accepted commanded setpoint, so a restarting Supervisor can compute the
+  // rate-of-change baseline without guessing. Baseline is the last COMMANDED value,
+  // never the last APPLIED value, which lags during the drive slew.
+  double last_commanded_rate_pct = 5;
+
+  // Remaining cumulative rate-change budget in the current 60s rolling window.
+  double rate_budget_remaining_pp = 6;
+}
+
+message HeartbeatRequest {
+  repeated string equipment_ids = 1;
+  uint64 control_epoch = 2;
+  string correlation_id = 3;
+}
+
+message HeartbeatResponse {
+  // Equipment whose epoch has moved on; the Supervisor must re-acquire before commanding these.
+  repeated string fenced_equipment_ids = 1;
+  string correlation_id = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Command
+// ---------------------------------------------------------------------------
+
+message ApplyCommandRequest {
+  string command_id = 1;
+
+  // Transport-retry deduplication only. Scope: a single decision. This does NOT protect against
+  // logical re-decision; that is handled by expiry and epoch fencing.
+  string idempotency_key = 2;
+
+  string equipment_id = 3;
+  CommandType command_type = 4;
+  double target = 5;
+  Unit unit = 6;
+
+  // Epoch the Supervisor believes is current. Control Service rejects with COMMAND_EPOCH_STALE
+  // if this is less than its own persisted epoch for this equipment.
+  uint64 control_epoch = 7;
+
+  google.protobuf.Timestamp issued_at = 8;
+
+  // MUST be issued_at + 2000ms, which is shorter than the 5s inference cadence. This is what
+  // makes concurrent validity impossible and therefore makes arrival-order processing safe.
+  google.protobuf.Timestamp expires_at = 9;
+
+  // Audit and freshness only. NOT used for ordering (see header note).
+  google.protobuf.Timestamp source_prediction_at = 10;
+
+  string decision_id = 11;
+  string correlation_id = 12;
+  string causation_id = 13;
+
+  // NOTE: there is deliberately NO `source` field. In v0.2 `source` was a self-asserted string,
+  // so any process able to reach this port could claim to be the Safety Supervisor, defeating
+  // ADR-0002. Origin is now derived server-side from the verified peer identity (DEC-006) and
+  // returned as `authenticated_source`.
+}
+
+message ApplyCommandResponse {
+  string command_id = 1;
+  CommandStatus status = 2;
+  google.protobuf.Timestamp applied_at = 3;
+  ReasonCode reason_code = 4;
+
+  // Server-derived from the verified mTLS peer identity. Never echoed from the request.
+  // Required so the audit chain retains an origin after `source` was removed (NFR-002).
+  string authenticated_source = 5;
+
+  // Control Service's authoritative epoch. On COMMAND_EPOCH_STALE the Supervisor uses this to
+  // re-acquire rather than blindly retrying.
+  uint64 control_epoch = 6;
+
+  ControlMode resulting_mode = 7;
+
+  // Value actually written after Control Service clamping, which may differ from `target`.
+  double applied_target = 8;
+
+  string correlation_id = 9;
+}
+
+// ---------------------------------------------------------------------------
+// Enums - typed, not strings (GAP-006 / CODEX-GAP-007)
+// ---------------------------------------------------------------------------
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  SET_OPERATION_RATE = 1;
+}
+
+enum Unit {
+  UNIT_UNSPECIFIED = 0;
+  PERCENT = 1;
+}
+
+enum ControlMode {
+  CONTROL_MODE_UNSPECIFIED = 0;
+  NORMAL_RULE = 1;
+  AI_ASSISTED = 2;
+  SAFE_FALLBACK = 3;
+  STOP_REQUIRED = 4;
+  // No MANUAL_OPERATOR: deliberately excluded from the v0.3 baseline (DEC-004).
+}
+
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  APPLIED = 1;
+  REJECTED = 2;
+  EXPIRED = 3;
+  DUPLICATE = 4;
+  FAILED = 5;
+  SUPERSEDED = 6;
+  FENCED = 7;
+}
+
+enum ReasonCode {
+  REASON_CODE_UNSPECIFIED = 0;
+  COMMAND_APPLIED = 1;
+  COMMAND_EXPIRED = 2;
+  COMMAND_DUPLICATE = 3;
+  COMMAND_TARGET_OUT_OF_RANGE = 4;
+  COMMAND_EQUIPMENT_UNAVAILABLE = 5;
+  COMMAND_PROTOCOL_FAILED = 6;
+  COMMAND_SUPERSEDED = 7;
+  COMMAND_EPOCH_STALE = 8;
+  COMMAND_SOURCE_STALE = 9;
+  COMMAND_SOURCE_UNAUTHORIZED = 10;
+  COMMAND_MODE_FORBIDS = 11;
+  COMMAND_RATE_CLAMPED = 12;
+}
+
+// Invalid-field behavior (GAP-006): any request failing field validation is rejected with
+// gRPC INVALID_ARGUMENT and CommandStatus=REJECTED. Control Service NEVER coerces, defaults,
+// or silently clamps an out-of-contract field - a malformed command is a defect to surface,
+// not a value to guess. Out-of-RANGE targets within a well-formed request are clamped and
+// reported with COMMAND_RATE_CLAMPED plus applied_target.

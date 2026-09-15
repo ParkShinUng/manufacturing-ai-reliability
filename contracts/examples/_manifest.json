@@ -1,0 +1,11 @@
+{
+  "telemetry.healthy.json": "telemetry.schema.json",
+  "telemetry.dead-sensor.json": "telemetry.schema.json",
+  "prediction.json": "prediction.schema.json",
+  "safety-decision.clamped.json": "safety-decision.schema.json",
+  "control-outcome.watchdog.json": "control-outcome.schema.json",
+  "equipment-state.json": "equipment-state.schema.json",
+  "model-authorization.quarantine.json": "model-authorization.schema.json",
+  "model-authorization.watermark.json": "model-authorization.schema.json",
+  "safety-config.demo.json": "safety-config.schema.json"
+}

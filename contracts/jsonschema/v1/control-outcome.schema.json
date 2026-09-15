@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/control-outcome.schema.json",
+  "title": "FactoryControlOutcomeV1",
+  "description": "Result of an equipment command or an autonomous Control Service action. Topic: factory.control-outcomes.v1, key: equipmentId. Produced exclusively by control-service. This is the audit record required by ADR-0009 and SECURITY_BOUNDARIES.md; v0.2 required the topic but never defined it (GAP-008).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "equipmentId",
+    "commandId",
+    "occurredAtUtc",
+    "ingestTimeUtc",
+    "producer",
+    "status",
+    "reasonCode",
+    "authenticatedSource",
+    "controlEpoch",
+    "resultingMode",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "factory.control-outcome"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "equipmentId": {
+      "type": "string",
+      "pattern": "^eq-[0-9]{3,6}$"
+    },
+    "commandId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "decisionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid",
+      "description": "Null for autonomous Control Service actions such as a watchdog fallback, which have no originating safety decision."
+    },
+    "occurredAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "appliedAtUtc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "ingestTimeUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "APPLIED",
+        "REJECTED",
+        "EXPIRED",
+        "DUPLICATE",
+        "FAILED",
+        "SUPERSEDED",
+        "FENCED"
+      ]
+    },
+    "reasonCode": {
+      "enum": [
+        "COMMAND_APPLIED",
+        "COMMAND_EXPIRED",
+        "COMMAND_DUPLICATE",
+        "COMMAND_TARGET_OUT_OF_RANGE",
+        "COMMAND_EQUIPMENT_UNAVAILABLE",
+        "COMMAND_PROTOCOL_FAILED",
+        "COMMAND_SUPERSEDED",
+        "COMMAND_EPOCH_STALE",
+        "COMMAND_SOURCE_STALE",
+        "COMMAND_SOURCE_UNAUTHORIZED",
+        "COMMAND_MODE_FORBIDS",
+        "COMMAND_RATE_CLAMPED",
+        "SUPERVISOR_SILENT"
+      ]
+    },
+    "authenticatedSource": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Server-derived from the verified mTLS peer identity, NEVER echoed from the request (DEC-006). For autonomous actions this is the Control Service's own identity."
+    },
+    "controlEpoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "requestedTargetPct": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "appliedTargetPct": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "wasClamped": {
+      "type": "boolean"
+    },
+    "resultingMode": {
+      "enum": [
+        "NORMAL_RULE",
+        "AI_ASSISTED",
+        "SAFE_FALLBACK",
+        "STOP_REQUIRED"
+      ]
+    },
+    "modeTransitionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^M(1[0-2]|[1-9])$",
+      "description": "M1..M12 from CONTROL_MODE_STATE_MACHINE.md when this outcome carried a mode change."
+    },
+    "operatorId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "REQUIRED and non-null for transition M7 (STOP_REQUIRED release). A STOP_REQUIRED release with no recorded operator is a contract violation and must fail rather than default."
+    },
+    "autonomous": {
+      "type": "boolean",
+      "description": "True when Control Service acted without a Supervisor command (watchdog fallback)."
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

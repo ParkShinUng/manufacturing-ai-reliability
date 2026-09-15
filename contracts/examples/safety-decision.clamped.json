@@ -1,0 +1,99 @@
+{
+  "eventId": "b2c3d4e5-6789-4abc-8def-012345678901",
+  "eventType": "factory.safety-decision",
+  "schemaVersion": 1,
+  "decisionId": "5e4d3c2b-1a09-4876-b5c4-d3e2f1a09876",
+  "equipmentId": "eq-001",
+  "predictionId": "c9b8a7d6-1234-4e5f-9a8b-7c6d5e4f3a21",
+  "sourcePredictionAtUtc": "2026-09-15T04:00:05.000Z",
+  "decidedAtUtc": "2026-09-15T04:00:05.180Z",
+  "occurredAtUtc": "2026-09-15T04:00:05.180Z",
+  "producer": "safety-supervisor@sup-1",
+  "decision": "ACCEPT",
+  "controlMode": "AI_ASSISTED",
+  "gateResults": [
+    {
+      "gate": "SUPERVISOR_HEALTHY",
+      "passed": true
+    },
+    {
+      "gate": "MODEL_AUTHORIZED",
+      "passed": true
+    },
+    {
+      "gate": "PREDICTION_FRESH",
+      "passed": true,
+      "observedValue": 0.18,
+      "threshold": 10
+    },
+    {
+      "gate": "PREDICTION_ORDERED",
+      "passed": true
+    },
+    {
+      "gate": "TELEMETRY_FRESH",
+      "passed": true,
+      "observedValue": 0.08,
+      "threshold": 2
+    },
+    {
+      "gate": "TELEMETRY_QUALITY",
+      "passed": true,
+      "observedValue": "GOOD"
+    },
+    {
+      "gate": "FEATURE_COMPLETE",
+      "passed": true,
+      "observedValue": 0.99,
+      "threshold": 0.8
+    },
+    {
+      "gate": "OOD",
+      "passed": true,
+      "observedValue": 0.12,
+      "threshold": 0.35
+    },
+    {
+      "gate": "CONFIDENCE",
+      "passed": true,
+      "observedValue": 0.92,
+      "threshold": 0.7
+    },
+    {
+      "gate": "EQUIPMENT_STATE_ELIGIBLE",
+      "passed": true,
+      "observedValue": "RUNNING"
+    },
+    {
+      "gate": "RATE_OF_CHANGE",
+      "passed": true,
+      "observedValue": 30,
+      "threshold": 10
+    },
+    {
+      "gate": "RATE_BUDGET",
+      "passed": true,
+      "observedValue": 0,
+      "threshold": 25
+    },
+    {
+      "gate": "OPERATING_BOUNDS",
+      "passed": true,
+      "observedValue": 90,
+      "threshold": 60
+    }
+  ],
+  "reasonCodes": [
+    "AI_ACCEPTED",
+    "RATE_CHANGE_CLAMPED"
+  ],
+  "recommendation": {
+    "requestedOperationRatePct": 70.0,
+    "boundedOperationRatePct": 90.0,
+    "wasClamped": true,
+    "baselineOperationRatePct": 100.0,
+    "rateBudgetRemainingPp": 15.0
+  },
+  "correlationId": "9c1f6d2a-7b3e-4a51-8f2d-2c4b6e8a0d11",
+  "causationId": "c9b8a7d6-1234-4e5f-9a8b-7c6d5e4f3a21"
+}

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/telemetry.schema.json",
+  "title": "FactoryTelemetryV1",
+  "description": "Canonical normalized equipment telemetry event. Topic: factory.telemetry.v1, key: equipmentId. Produced exclusively by edge-gateway. v0.3: measurement values are nullable (DEC-008), quality flags are a closed enum (GAP-061), and quality.overall is derived, never free-form.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "equipmentId",
+    "eventTimeUtc",
+    "ingestTimeUtc",
+    "occurredAtUtc",
+    "sequence",
+    "producer",
+    "quality",
+    "measurements",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique per emitted event. Not a deduplication key; see duplicateIdentity below."
+    },
+    "eventType": {
+      "const": "factory.telemetry",
+      "description": "Envelope discriminator (DEC-007)."
+    },
+    "schemaVersion": { "const": 1 },
+    "equipmentId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^eq-[0-9]{3,6}$"
+    },
+    "eventTimeUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the measurement was taken. OPC UA SourceTimestamp where available; for Modbus this equals ingestTimeUtc and TIMESTAMP_SYNTHESISED is raised."
+    },
+    "ingestTimeUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Gateway receipt clock."
+    },
+    "occurredAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Envelope time. For telemetry this equals eventTimeUtc."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615,
+      "description": "Strictly monotonic per equipmentId, assigned by the EQUIPMENT (not the gateway) so that gateway-side loss is detectable. Resets to 0 only on equipment restart, which must coincide with a sourceEpochMs reset."
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Producing service identity, e.g. edge-gateway@host-1. Required for causation auditing (NFR-002)."
+    },
+    "sourceProtocol": {
+      "enum": ["OPC_UA", "MODBUS_TCP"],
+      "description": "Which OT protocol this sample was read through. Determines whether eventTimeUtc is authoritative."
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall", "flags"],
+      "properties": {
+        "overall": {
+          "enum": ["GOOD", "UNCERTAIN", "BAD"],
+          "description": "DERIVED by the edge-gateway from flags and the safety-required sensor map (TIME_AND_DATA_QUALITY.md 6). A contract test asserts this value matches the derivation rule."
+        },
+        "flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Closed vocabulary (GAP-061). An unlisted flag is a contract violation.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["channel", "flag"],
+            "properties": {
+              "channel": {
+                "enum": [
+                  "temperatureC",
+                  "vibrationRms",
+                  "currentA",
+                  "voltageV",
+                  "rpm",
+                  "torqueNm",
+                  "operationRatePct",
+                  "__event__"
+                ],
+                "description": "__event__ is used for event-scoped flags such as BUFFER_OVERFLOW_DROP and SEQUENCE_GAP that are not attributable to one channel."
+              },
+              "flag": {
+                "enum": [
+                  "SENSOR_MISSING",
+                  "SENSOR_DISCONNECTED",
+                  "SENSOR_FROZEN",
+                  "VALUE_OUT_OF_RANGE",
+                  "VALUE_NOT_FINITE",
+                  "STALE_READING",
+                  "OUTLIER_SUSPECTED",
+                  "TIMESTAMP_REVERSED",
+                  "TIMESTAMP_SYNTHESISED",
+                  "DUPLICATE_SUSPECTED",
+                  "SEQUENCE_GAP",
+                  "BUFFER_OVERFLOW_DROP"
+                ]
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Human-readable context. Never used for machine decisions and never used as a metric label."
+              }
+            }
+          }
+        }
+      }
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "All seven keys are REQUIRED so the shape is stable. Values are nullable: null means no trustworthy value exists and MUST be accompanied by a quality flag for that channel. Substituting a synthetic, zero, or last-known value is forbidden (DEC-008).",
+      "required": [
+        "temperatureC",
+        "vibrationRms",
+        "currentA",
+        "voltageV",
+        "rpm",
+        "torqueNm",
+        "operationRatePct"
+      ],
+      "properties": {
+        "temperatureC": { "type": ["number", "null"], "minimum": -20, "maximum": 160 },
+        "vibrationRms": { "type": ["number", "null"], "minimum": 0, "maximum": 50 },
+        "currentA": { "type": ["number", "null"], "minimum": 0, "maximum": 40 },
+        "voltageV": { "type": ["number", "null"], "minimum": 0, "maximum": 480 },
+        "rpm": { "type": ["number", "null"], "minimum": 0, "maximum": 2200 },
+        "torqueNm": { "type": ["number", "null"], "minimum": -10, "maximum": 150 },
+        "operationRatePct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 }
+      }
+    },
+    "equipmentState": {
+      "enum": ["OFFLINE", "CONNECTING", "IDLE", "RUNNING", "DEGRADED", "FAULT", "STOPPING"],
+      "description": "Gateway-observed equipment state at sample time."
+    },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "causationId": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Null for telemetry: it originates a causation chain rather than continuing one."
+    }
+  }
+}

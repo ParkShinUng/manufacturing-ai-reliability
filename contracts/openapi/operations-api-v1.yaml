@@ -1,0 +1,459 @@
+openapi: 3.1.0
+info:
+  title: Manufacturing AI Reliability Operations API
+  version: 1.0.0
+  description: >
+    Read-only operational API for the Manufacturing AI Reliability Platform.
+    This API is NEVER in the command path: no route here reaches the Control Service, and the
+    dashboard holds no equipment-write credentials (ADR-0002, FR-035).
+    v0.3 replaces the v0.2 stub, in which every response was `{description: OK}` with no schemas,
+    error model, pagination, or security scheme (GAP-005).
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: equipment
+  - name: platform
+  - name: trace
+  - name: demo
+
+paths:
+  /equipment:
+    get:
+      tags: [equipment]
+      summary: List equipment operational summaries
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/EquipmentState' }
+        - name: controlMode
+          in: query
+          schema: { $ref: '#/components/schemas/ControlMode' }
+      responses:
+        '200':
+          description: Paged equipment summaries
+          headers:
+            X-Data-Staleness-Seconds:
+              $ref: '#/components/headers/DataStaleness'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/EquipmentSummary' }
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Keyset cursor. Null when no further pages.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /equipment/{equipmentId}:
+    get:
+      tags: [equipment]
+      summary: Get one equipment operational state
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+      responses:
+        '200':
+          description: Equipment detail
+          headers:
+            X-Data-Staleness-Seconds:
+              $ref: '#/components/headers/DataStaleness'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /equipment/{equipmentId}/decisions:
+    get:
+      tags: [equipment]
+      summary: Query recent AI safety decisions
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: decision
+          in: query
+          schema: { type: string, enum: [ACCEPT, REJECT, FALLBACK] }
+      responses:
+        '200':
+          description: Paged safety decisions, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SafetyDecisionSummary' }
+                  nextCursor: { type: [string, 'null'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /equipment/{equipmentId}/commands:
+    get:
+      tags: [equipment]
+      summary: Query recent control outcomes
+      parameters:
+        - $ref: '#/components/parameters/EquipmentId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Paged control outcomes, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ControlOutcomeSummary' }
+                  nextCursor: { type: [string, 'null'] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /trace/{correlationId}:
+    get:
+      tags: [trace]
+      summary: Retrieve the full telemetry -> prediction -> decision -> command chain
+      description: Satisfies AC-006. Backed by an index on correlation_id, so this is a single query.
+      parameters:
+        - name: correlationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Correlation chain
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CorrelationTrace' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /platform/health:
+    get:
+      tags: [platform]
+      summary: Platform health summary
+      responses:
+        '200':
+          description: Platform health
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformHealth' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /models:
+    get:
+      tags: [platform]
+      summary: Current model authorization state
+      responses:
+        '200':
+          description: Authorized models
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, watermarkAgeSeconds]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModelDeployment' }
+                  watermarkAgeSeconds:
+                    type: number
+                    description: >
+                      Age of the last AuthorizationWatermark. Above 90 the Supervisor treats all
+                      models as unauthorized (ADR-0019).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /demo/faults:
+    post:
+      tags: [demo]
+      summary: Inject a simulator fault. DEMO PROFILE ONLY.
+      description: >
+        This is a SIMULATOR-ADMIN write, not an equipment-control write. It never traverses the
+        Control Service and never moves a production setpoint. The route is ABSENT from the
+        production-like build, not merely disabled (AC-031).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FaultInjectionRequest' }
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [faultInjectionId]
+                properties:
+                  faultInjectionId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Disabled outside the demo profile, or caller lacks the operator role
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Role claim required. `viewer` may read; `operator` may additionally reset STOP_REQUIRED and
+        inject demo faults.
+
+  headers:
+    DataStaleness:
+      description: >
+        Age of the underlying projection in seconds. Present so the UI can show staleness rather
+        than silently presenting stale data as current.
+      schema: { type: number }
+
+  parameters:
+    EquipmentId:
+      name: equipmentId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^eq-[0-9]{3,6}$' }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Keyset cursor. Keyset rather than offset, so pages stay stable under concurrent inserts.
+      schema: { type: string }
+    From:
+      name: from
+      in: query
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      schema: { type: string, format: date-time }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unavailable:
+      description: Backing store unavailable. Control is unaffected (F12).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        correlationId: { type: string, format: uuid }
+
+    EquipmentState:
+      type: string
+      enum: [OFFLINE, CONNECTING, IDLE, RUNNING, DEGRADED, FAULT, STOPPING]
+
+    ControlMode:
+      type: string
+      enum: [NORMAL_RULE, AI_ASSISTED, SAFE_FALLBACK, STOP_REQUIRED]
+      description: MANUAL_OPERATOR is deliberately absent from the v0.3 baseline (ADR-0014).
+
+    QualityOverall:
+      type: string
+      enum: [GOOD, UNCERTAIN, BAD]
+
+    EquipmentSummary:
+      type: object
+      required: [equipmentId, state, controlMode, aiEligible, qualityOverall, updatedAtUtc]
+      properties:
+        equipmentId: { type: string }
+        state: { $ref: '#/components/schemas/EquipmentState' }
+        controlMode: { $ref: '#/components/schemas/ControlMode' }
+        aiEligible: { type: boolean }
+        qualityOverall: { $ref: '#/components/schemas/QualityOverall' }
+        commandedRatePct: { type: [number, 'null'] }
+        appliedRatePct: { type: [number, 'null'] }
+        anomalyScore: { type: [number, 'null'] }
+        activeReasonCodes:
+          type: array
+          items: { type: string }
+        updatedAtUtc: { type: string, format: date-time }
+
+    EquipmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/EquipmentSummary'
+        - type: object
+          required: [measurements, qualityFlags, controlEpoch]
+          properties:
+            measurements:
+              type: object
+              description: Latest 1s aggregate. Null means no trustworthy value (ADR-0018).
+              additionalProperties:
+                type: [number, 'null']
+            qualityFlags:
+              type: array
+              items:
+                type: object
+                required: [channel, flag]
+                properties:
+                  channel: { type: string }
+                  flag: { type: string }
+            model:
+              type: object
+              properties:
+                name: { type: string }
+                version: { type: string }
+                deploymentStage: { type: string, enum: [SHADOW, CANARY, PRODUCTION] }
+            failureProbability: { type: [number, 'null'] }
+            rulMinutes: { type: [number, 'null'] }
+            controlEpoch: { type: integer }
+            rateBudgetRemainingPp: { type: [number, 'null'] }
+
+    SafetyDecisionSummary:
+      type: object
+      required: [decisionId, equipmentId, decision, reasonCodes, decidedAtUtc]
+      properties:
+        decisionId: { type: string, format: uuid }
+        equipmentId: { type: string }
+        predictionId: { type: [string, 'null'], format: uuid }
+        decision: { type: string, enum: [ACCEPT, REJECT, FALLBACK] }
+        reasonCodes:
+          type: array
+          items: { type: string }
+        requestedOperationRatePct: { type: [number, 'null'] }
+        boundedOperationRatePct: { type: [number, 'null'] }
+        wasClamped: { type: boolean }
+        decidedAtUtc: { type: string, format: date-time }
+        correlationId: { type: string, format: uuid }
+
+    ControlOutcomeSummary:
+      type: object
+      required: [commandId, equipmentId, status, reasonCode, authenticatedSource, occurredAtUtc]
+      properties:
+        commandId: { type: string, format: uuid }
+        equipmentId: { type: string }
+        decisionId: { type: [string, 'null'], format: uuid }
+        status:
+          type: string
+          enum: [APPLIED, REJECTED, EXPIRED, DUPLICATE, FAILED, SUPERSEDED, FENCED]
+        reasonCode: { type: string }
+        authenticatedSource:
+          type: string
+          description: Server-derived from the verified peer identity, never self-asserted (ADR-0016).
+        controlEpoch: { type: integer }
+        appliedTargetPct: { type: [number, 'null'] }
+        resultingMode: { $ref: '#/components/schemas/ControlMode' }
+        autonomous:
+          type: boolean
+          description: True when the Control Service acted without a Supervisor command (watchdog fallback).
+        operatorId: { type: [string, 'null'] }
+        occurredAtUtc: { type: string, format: date-time }
+
+    CorrelationTrace:
+      type: object
+      required: [correlationId, telemetry, prediction, decision, command]
+      properties:
+        correlationId: { type: string, format: uuid }
+        telemetry:
+          type: array
+          items: { type: object, additionalProperties: true }
+        prediction: { type: [object, 'null'], additionalProperties: true }
+        decision: { $ref: '#/components/schemas/SafetyDecisionSummary' }
+        command: { $ref: '#/components/schemas/ControlOutcomeSummary' }
+
+    PlatformHealth:
+      type: object
+      required: [inferenceAvailable, supervisorHealthy, controlServiceHealthy, fallbackRatePct]
+      properties:
+        inferenceAvailable: { type: boolean }
+        supervisorHealthy: { type: boolean }
+        controlServiceHealthy: { type: boolean }
+        kafkaReachable: { type: boolean }
+        maxConsumerLag: { type: integer }
+        predictionRecordAgeSeconds: { type: number }
+        authorizationWatermarkAgeSeconds: { type: number }
+        fallbackRatePct:
+          type: number
+          description: Percentage of equipment currently in SAFE_FALLBACK.
+        errorRatePct: { type: number }
+        clockSkewSeconds: { type: number }
+
+    ModelDeployment:
+      type: object
+      required: [modelName, modelVersion, deploymentStage, quarantined]
+      properties:
+        modelName: { type: string }
+        modelVersion: { type: string }
+        modelRunId: { type: string }
+        deploymentStage: { type: string, enum: [SHADOW, CANARY, PRODUCTION, ARCHIVED] }
+        quarantined: { type: boolean }
+        authorizedEquipmentCohort:
+          type: [array, 'null']
+          items: { type: string }
+        featureSchemaVersion: { type: integer }
+        issuedAtUtc: { type: string, format: date-time }
+
+    FaultInjectionRequest:
+      type: object
+      required: [equipmentId, profile]
+      properties:
+        equipmentId: { type: string, pattern: '^eq-[0-9]{3,6}$' }
+        profile:
+          type: string
+          enum:
+            - NORMAL
+            - BEARING_DEGRADATION
+            - OVERLOAD
+            - COOLING_DEGRADATION
+            - SENSOR_DRIFT
+            - SENSOR_NOISE
+            - SENSOR_FREEZE
+            - SENSOR_DROPOUT
+            - COMM_LOSS
+            - OOD_PROFILE
+        channel:
+          type: [string, 'null']
+          description: Required for sensor-scoped profiles.
+        durationSeconds: { type: [integer, 'null'], minimum: 1 }
+        seed: { type: [integer, 'null'] }

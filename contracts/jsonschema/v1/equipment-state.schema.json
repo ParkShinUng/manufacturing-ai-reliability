@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/equipment-state.schema.json",
+  "title": "FactoryEquipmentStateV1",
+  "description": "Gateway-OBSERVED equipment state. Topic: factory.equipment-states.v1, key: equipmentId, compacted. Produced exclusively by edge-gateway. Consumed by safety-supervisor for gate 10. v0.2 required this input ('predictions plus required equipment state') but defined no contract for it (GAP-031).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "equipmentId",
+    "state",
+    "stateSequence",
+    "occurredAtUtc",
+    "ingestTimeUtc",
+    "producer",
+    "observedBy",
+    "correlationId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "factory.equipment-state"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "equipmentId": {
+      "type": "string",
+      "pattern": "^eq-[0-9]{3,6}$"
+    },
+    "state": {
+      "enum": [
+        "OFFLINE",
+        "CONNECTING",
+        "IDLE",
+        "RUNNING",
+        "DEGRADED",
+        "FAULT",
+        "STOPPING"
+      ]
+    },
+    "previousState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "OFFLINE",
+        "CONNECTING",
+        "IDLE",
+        "RUNNING",
+        "DEGRADED",
+        "FAULT",
+        "STOPPING",
+        null
+      ]
+    },
+    "transitionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^T(1[0-2]|[1-9])$",
+      "description": "T1..T12 from EQUIPMENT_MODEL_AND_STATE.md 3.2."
+    },
+    "stateSequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Scope: per equipmentId, assigned by the EDGE GATEWAY (not the equipment). Named distinctly from telemetry `sequence`, which is equipment-assigned, so the two can never be confused."
+    },
+    "observedBy": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Gateway instance identity. Present so a consumer can never mistake an observed state for equipment ground truth - a gateway that cannot reach a healthy machine reports OFFLINE while the machine is in fact RUNNING."
+    },
+    "aiEligible": {
+      "type": "boolean",
+      "description": "Derived: true only when state == RUNNING. Carried explicitly so the Supervisor gate is a field read rather than a re-derivation."
+    },
+    "activeConditions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "QUALITY_UNCERTAIN",
+          "ADVISORY_SENSOR_BAD",
+          "VIBRATION_HIGH",
+          "TEMPERATURE_HIGH",
+          "SETPOINT_TRACKING_FAILURE",
+          "TEMPERATURE_TRIP",
+          "VIBRATION_TRIP",
+          "CURRENT_TRIP",
+          "SAFETY_SENSOR_BAD",
+          "STOP_REQUESTED"
+        ]
+      }
+    },
+    "occurredAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingestTimeUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  }
+}

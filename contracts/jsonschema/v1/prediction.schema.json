@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mair.local/contracts/v1/prediction.schema.json",
+  "title": "FactoryPredictionV1",
+  "description": "AI prediction event. Topic: factory.predictions.v1, key: equipmentId. Produced exclusively by prediction-service. NON-AUTHORITATIVE: this event is a recommendation only and confers no control authority (ADR-0002). v0.3 adds deploymentStage (GAP-070), featureSchemaVersion (GAP-073), and validSampleRatio (DEC-008).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "predictionId",
+    "equipmentId",
+    "predictedAtUtc",
+    "occurredAtUtc",
+    "ingestTimeUtc",
+    "producer",
+    "model",
+    "featureWindow",
+    "outputs",
+    "correlationId",
+    "causationId"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": { "const": "factory.prediction" },
+    "schemaVersion": { "const": 1 },
+    "predictionId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Duplicate identity for this topic."
+    },
+    "equipmentId": { "type": "string", "pattern": "^eq-[0-9]{3,6}$" },
+    "predictedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When inference completed. MUST be strictly increasing per equipmentId (DEC-003) - Control Service supersession ordering depends on this guarantee."
+    },
+    "occurredAtUtc": { "type": "string", "format": "date-time" },
+    "ingestTimeUtc": { "type": "string", "format": "date-time" },
+    "producer": { "type": "string", "minLength": 1 },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "runId", "deploymentStage", "featureSchemaVersion"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "MLflow run ID. Links prediction to training run (FR-040, AC-008)."
+        },
+        "deploymentStage": {
+          "enum": ["SHADOW", "CANARY", "PRODUCTION"],
+          "description": "REQUIRED by ADR-0010. Without it, shadow/canary output is indistinguishable from production at the decision point (GAP-070). Safety Supervisor rejects any stage not authorized for this equipment with MODEL_STAGE_UNAUTHORIZED."
+        },
+        "featureSchemaVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Detects training-serving skew at decision time (GAP-073). Supervisor rejects on mismatch with the authorized model record."
+        }
+      }
+    },
+    "featureWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windowId", "startUtc", "endUtc", "validSampleRatio"],
+      "properties": {
+        "windowId": { "type": "string", "format": "uuid" },
+        "startUtc": { "type": "string", "format": "date-time" },
+        "endUtc": { "type": "string", "format": "date-time" },
+        "validSampleRatio": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-channel valid-sample ratio (DEC-008). Nulls are excluded from aggregates, never zero-filled. A prediction is NOT produced at all when any safety-required channel is below 0.8.",
+          "required": ["temperatureC", "vibrationRms", "currentA", "rpm", "operationRatePct"],
+          "properties": {
+            "temperatureC": { "type": "number", "minimum": 0, "maximum": 1 },
+            "vibrationRms": { "type": "number", "minimum": 0, "maximum": 1 },
+            "currentA": { "type": "number", "minimum": 0, "maximum": 1 },
+            "rpm": { "type": "number", "minimum": 0, "maximum": 1 },
+            "operationRatePct": { "type": "number", "minimum": 0, "maximum": 1 },
+            "voltageV": { "type": "number", "minimum": 0, "maximum": 1 },
+            "torqueNm": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anomalyScore", "confidence", "oodScore"],
+      "properties": {
+        "anomalyScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "failureProbability": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "rulMinutes": { "type": ["number", "null"], "minimum": 0 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "oodScore": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Higher is more out-of-distribution. Compared against the authorized model record's oodThreshold. OOD is a HARD REJECT (DEC-005)."
+        },
+        "recommendedOperationRatePct": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "The AI's proposed setpoint. NON-BINDING. Null means the model declines to recommend, which is a valid output and is not an error."
+        }
+      }
+    },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "causationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The featureWindow.windowId this prediction derives from. Continues the causation chain from telemetry."
+    }
+  }
+}

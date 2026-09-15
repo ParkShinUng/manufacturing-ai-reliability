@@ -1,0 +1,81 @@
+# --- Local tooling state -----------------------------------------------------
+# .claude/settings.json holds machine-local Claude Code preferences, not project
+# policy. Project policy for AI agents lives in CLAUDE.md and AGENTS.md, which ARE
+# committed.
+.claude/
+
+# --- Secrets -----------------------------------------------------------------
+# NFR-006: secrets are never committed. These patterns are a backstop, not the
+# control - the control is that configuration is supplied by environment or a
+# secret store (SECURITY_BOUNDARIES.md).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+secrets.*
+appsettings.Development.json
+appsettings.Local.json
+
+# --- Measured results --------------------------------------------------------
+# reports/ holds measured load and failure evidence with environment metadata.
+# The directory and its README are tracked; generated report payloads are not,
+# because they are large, machine-specific, and regenerable (NFR-005, AC-042).
+reports/**
+!reports/README.md
+!reports/.gitkeep
+
+# --- .NET --------------------------------------------------------------------
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+mlruns/
+mlartifacts/
+
+# --- Node / TypeScript -------------------------------------------------------
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.npm/
+.pnpm-store/
+
+# --- Editors / OS ------------------------------------------------------------
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Runtime scratch ---------------------------------------------------------
+*.log
+logs/
+tmp/
+temp/
+*.migrating
+junction-probe.tmp

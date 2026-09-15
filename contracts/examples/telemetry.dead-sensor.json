@@ -1,0 +1,39 @@
+{
+  "eventId": "7b52009b-64fd-4a1f-9b1e-0a2f4c6d8e10",
+  "eventType": "factory.telemetry",
+  "schemaVersion": 1,
+  "equipmentId": "eq-001",
+  "eventTimeUtc": "2026-09-15T04:03:11.400Z",
+  "ingestTimeUtc": "2026-09-15T04:03:11.421Z",
+  "occurredAtUtc": "2026-09-15T04:03:11.400Z",
+  "sequence": 125234,
+  "producer": "edge-gateway@gw-1",
+  "sourceProtocol": "MODBUS_TCP",
+  "quality": {
+    "overall": "BAD",
+    "flags": [
+      {
+        "channel": "vibrationRms",
+        "flag": "SENSOR_DISCONNECTED",
+        "detail": "quality bitmap bit 5 clear"
+      },
+      {
+        "channel": "__event__",
+        "flag": "TIMESTAMP_SYNTHESISED",
+        "detail": "modbus has no source timestamp"
+      }
+    ]
+  },
+  "measurements": {
+    "temperatureC": 51.7,
+    "vibrationRms": null,
+    "currentA": 12.6,
+    "voltageV": 399.8,
+    "rpm": 1779.2,
+    "torqueNm": 43.1,
+    "operationRatePct": 100.0
+  },
+  "equipmentState": "DEGRADED",
+  "correlationId": "1d4e7a90-5c2b-4f88-b3a6-7e9c0f1a2b33",
+  "causationId": null
+}
