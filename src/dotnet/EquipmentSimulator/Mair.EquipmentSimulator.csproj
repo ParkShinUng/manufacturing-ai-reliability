@@ -6,4 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- EpochWrapped is a pure function extracted so the 2^32 ms rollover can be tested without
+         43 billion ticks. It is internal because it is not part of the equipment's contract. -->
+    <InternalsVisibleTo Include="Mair.EquipmentSimulator.Tests" />
+  </ItemGroup>
+
 </Project>

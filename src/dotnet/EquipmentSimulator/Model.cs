@@ -28,6 +28,13 @@ public enum FaultProfile
     SensorDropout,
     CommLoss,
     OodProfile,
+
+    /// <summary>
+    /// The drive stops following its setpoint at <c>T_stuck</c>. Added by OD-001: 3.3 makes
+    /// drive-tracking failure a degradation condition, and until this profile existed nothing in
+    /// the model could cause it.
+    /// </summary>
+    DriveStuck,
 }
 
 /// <summary>The seven published sensor channels. EQUIPMENT_MODEL_AND_STATE.md §1.2.</summary>

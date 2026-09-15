@@ -29,6 +29,9 @@ public sealed record EquipmentOptions
     /// <summary><c>T_cool</c> for COOLING_DEGRADATION.</summary>
     public double CoolingTimeSeconds { get; init; } = 900;
 
+    /// <summary><c>T_stuck</c> for DRIVE_STUCK: when the drive stops following its setpoint.</summary>
+    public double StuckTimeSeconds { get; init; } = 60;
+
     /// <summary>Dead-man window. No setpoint refresh within it reverts to <see cref="SafeDefaultRatePct"/> (DEC-001).</summary>
     public int DeadmanTimeoutMs { get; init; } = 30_000;
 
@@ -71,9 +74,9 @@ public sealed record EquipmentOptions
                 nameof(FaultChannel));
         }
 
-        if (FailureTimeSeconds <= 0 || CoolingTimeSeconds <= 0)
+        if (FailureTimeSeconds <= 0 || CoolingTimeSeconds <= 0 || StuckTimeSeconds <= 0)
         {
-            throw new ArgumentException("T_fail and T_cool must be positive.", nameof(FailureTimeSeconds));
+            throw new ArgumentException("T_fail, T_cool and T_stuck must be positive.", nameof(FailureTimeSeconds));
         }
 
         if (DeadmanTimeoutMs <= 0)

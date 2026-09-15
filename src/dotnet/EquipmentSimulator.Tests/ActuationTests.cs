@@ -172,4 +172,33 @@ public sealed class ActuationTests
             () => sim.InjectProtectiveCondition(ProtectiveCondition.OverVibration));
         Assert.Throws<InvalidOperationException>(() => sim.InjectCommLoss());
     }
+
+    [Fact]
+    public void ObservabilityCountersRecordRejectionsAndTrips()
+    {
+        // DEFINITION_OF_DONE: metrics for operationally meaningful behaviour. The rejections are
+        // the point - a counter that only counts successes hides the failure mode it exists for.
+        var sim = new EquipmentSimulation(new EquipmentOptions
+        {
+            EquipmentId = "eq-001",
+            Seed = 3,
+            DemoProfile = true,
+        });
+
+        sim.Connect();
+        sim.Tick();
+
+        sim.WriteSetpoint(101);       // out of range
+        sim.WriteSetpoint(80);        // accepted
+        sim.InjectProtectiveCondition(ProtectiveCondition.OverVibration);
+        sim.Tick();
+        sim.WriteSetpoint(50);        // rejected: FAULT
+
+        Assert.Equal(1, sim.SetpointWritesTotal[SetpointResult.RejectedOutOfRange]);
+        Assert.Equal(1, sim.SetpointWritesTotal[SetpointResult.Accepted]);
+        Assert.Equal(1, sim.SetpointWritesTotal[SetpointResult.RejectedState]);
+        Assert.Equal(1, sim.ProtectiveTripsTotal[ProtectiveCondition.OverVibration]);
+        Assert.Equal(1, sim.FaultInjectionsTotal[FaultProfile.Normal]);
+        Assert.True(sim.StateTicks[EquipmentState.Idle] > 0);
+    }
 }

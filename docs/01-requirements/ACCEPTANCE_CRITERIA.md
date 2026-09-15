@@ -15,7 +15,7 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   criterion cannot be evaluated until Phase 2 exists.
 - **AC-002 → FR-004** — Disconnect a protocol endpoint, restore it, and verify gateway reconnect and
   resumed event flow **without a gateway process restart**, within 10 s (R-01).
-- **AC-018 → FR-002** — Each of the 10 fault profiles produces its documented signature; with a
+- **AC-018 → FR-002** — Each of the **11** fault profiles produces its documented signature; with a
   fixed seed two runs are **bit-identical** (NFR-010).
 - **AC-019 → FR-002/FR-052** — `OOD_PROFILE` breaks the rpm↔rate relationship while keeping every
   value in range, so a pure range check does **not** detect it and the OOD gate must.

@@ -67,14 +67,13 @@ every 100ms per equipment:
 Rejecting rather than clamping an out-of-range write is deliberate: clamping would mask a
 control-path defect that the Control Service bounds check should have caught first.
 
-**Over-temperature margin — measured in Phase 1, not tuned away.** The only modelled physics path to
-the 120 °C protective trip is `COOLING_DEGRADATION` at 100 % rate. With `c` capped at 0.9,
-`T_target` = 22 + 32/(1 − 0.675) = **120.46 °C**, clearing the trip point by **0.46 °C**. The trip is
-therefore reachable but slow (~20 min from ambient) and sensitive to the constants:
-`BEARING_DEGRADATION` alone peaks at 79.6 °C and never trips, and raising `T_ambient`, lowering
-`c_max`, or raising `τ_thermal` erodes or removes the margin. This is a property of the constants in
-`EQUIPMENT_MODEL_AND_STATE.md` §1.3 and is recorded rather than silently adjusted — changing it is a
-model decision, not an implementation detail.
+**Over-temperature margin — resolved 2026-09-15 (OD-002).** This section previously recorded a
+0.46 °C margin: with `c` capped at 0.9, `COOLING_DEGRADATION` at full rate asymptoted at 120.46 °C
+against a 120 °C trip, so the trip took ~20 minutes and any change to `T_ambient` or `τ_thermal`
+would have removed it. The product owner resolved OD-002 by raising fault severity rather than
+lowering the safety limit: the cap on `c` is now 0.95, giving `T_target` = 133.3 °C and a 13.3 °C
+margin. `BEARING_DEGRADATION` alone still peaks at 79.6 °C and still never trips on temperature —
+that is correct, it is a mechanical fault, not a thermal one.
 
 ## 12. Timeout / retry / idempotency / ordering
 Setpoint write is **naturally idempotent** (it is a setpoint, not a delta) — this is what makes
@@ -102,6 +101,15 @@ build otherwise. Only the setpoint node/register is writable. The gateway's OT s
 `simulator_loop_overruns_total`, `equipment_state{state}`, `fault_injections_total{profile}`,
 `deadman_reverts_total`, `protective_trips_total{condition}`, `setpoint_writes_total{result}`.
 
+Every label is an enum, so the label set is bounded and `equipmentId` is never one
+(`CODING_STANDARDS.md`).
+
+**Phase 1 delivers the values, not the exporter.** The domain core exposes each of these as an
+in-process counter on `EquipmentSimulation`; scraping them needs a metrics library, which is a
+dependency decision, so the exporter belongs to the host in Phase 2.
+`simulator_loop_overruns_total` is the exception — it measures the 100 ms loop, and there is no loop
+host in Phase 1, so there is nothing to overrun yet. It arrives with the host.
+
 ## 18. Performance targets (TARGET — unmeasured)
 20 equipment @100 ms with loop overrun < 0.1 %; 250 equipment @100 ms with overrun < 1 %;
 protocol read P95 < 20 ms.
@@ -118,7 +126,7 @@ Phase 2 (`IMPLEMENTATION_PLAN.md`).
 
 ## 21. Phase 1 implementation status — 2026-09-15
 Delivered in `src/dotnet/EquipmentSimulator/`: physics and degradation, the T1–T12 state machine with
-its forbidden transitions, all 10 fault profiles, L3 protective trips, the dead-man revert, and
+its forbidden transitions, all 11 fault profiles, L3 protective trips, the dead-man revert, and
 `sequence` / `sourceEpochMs` assignment. 44 tests in `EquipmentSimulator.Tests/` pass.
 
 **Not** delivered in Phase 1, by the scope boundary recorded in `IMPLEMENTATION_PLAN.md`: the OPC UA

@@ -24,6 +24,14 @@ public sealed class EquipmentSimulation
     private const double ThermalTauSeconds = 180.0;
     private const double MaxSlewPctPerSecond = 15.0;
 
+    // Fault severities, raised on 2026-09-15 when OD-002 was resolved. Before that, two of the three
+    // sensed protective conditions could not be reached by any profile and the third had 0.46 degC
+    // of margin, so the innermost safety layer was unexercisable. The protective THRESHOLDS below
+    // were deliberately left alone - the fault model was what could not produce a dangerous machine.
+    private const double VibrationHealthCoupling = 12.0;  // was 6.0  -> worst case 28.6 mm/s
+    private const double OverloadLoadFactor = 2.8;        // was 1.6  -> worst case 33.6 A
+    private const double MaxCoolingLoss = 0.95;           // was 0.9  -> T_target 133.3 degC
+
     private const double TripTemperatureC = 120.0;
     private const double TripVibrationRms = 25.0;
     private const double TripCurrentA = 32.0;
@@ -45,6 +53,22 @@ public sealed class EquipmentSimulation
     private readonly Queue<FaultEvent> _faultEvents = new();
     private readonly HashSet<ProtectiveCondition> _injectedConditions = [];
     private readonly HashSet<ProtectiveCondition> _latched = [];
+
+    /// <summary>
+    /// Conditions found present on the most recent tick. <see cref="OperatorReset"/> reads THIS
+    /// rather than re-deriving its own set: two independent evaluations of "is the machine safe"
+    /// will drift, and the one guarding the reset is the one that must not be weaker.
+    /// </summary>
+    private IReadOnlyList<ProtectiveCondition> _presentConditions = [];
+
+    // EQUIPMENT_SIMULATOR.md 17. Every label here is an enum, so the label set is bounded and
+    // equipmentId is never one (CODING_STANDARDS.md). These are in-process counters, not an
+    // exporter: exporting them needs a metrics library, which is a dependency decision and so
+    // belongs to the host in Phase 2.
+    private readonly Dictionary<EquipmentState, long> _stateTicks = [];
+    private readonly Dictionary<ProtectiveCondition, int> _protectiveTrips = [];
+    private readonly Dictionary<SetpointResult, int> _setpointWrites = [];
+    private readonly Dictionary<FaultProfile, int> _faultInjections = [];
 
     private EquipmentState _state = EquipmentState.Offline;
     private double _setpointPct;
@@ -77,6 +101,13 @@ public sealed class EquipmentSimulation
 
         _options = options;
         _random = new DeterministicRandom(options.Seed);
+
+        // COD-VFY-002, accepted in full at round 3. AC-018 requires each PROFILE to produce its
+        // documented signature, and §2's model for COMM_LOSS is "protocol endpoint stops
+        // responding". Gating the injection was not enough: the profile has to act by itself.
+        // Onset control - disconnect mid-run, then restore - is AC-002, which is Phase 2; the demo
+        // API stays for that cycle.
+        _commLost = options.FaultProfile == FaultProfile.CommLoss;
         _deadmanTicks = options.DeadmanTimeoutMs / (int)(TickSeconds * 1000);
     }
 
@@ -96,6 +127,21 @@ public sealed class EquipmentSimulation
     public int DeadmanRevertCount { get; private set; }
 
     public int ProtectiveTripCount { get; private set; }
+
+    /// <summary><c>fault_injections_total{profile}</c>, labelled by the equipment's configured profile.</summary>
+    public IReadOnlyDictionary<FaultProfile, int> FaultInjectionsTotal => _faultInjections;
+
+    /// <summary>Ticks spent in each state - the bounded-label form of `equipment_state{state}`.</summary>
+    public IReadOnlyDictionary<EquipmentState, long> StateTicks => _stateTicks;
+
+    /// <summary><c>protective_trips_total{condition}</c>.</summary>
+    public IReadOnlyDictionary<ProtectiveCondition, int> ProtectiveTripsTotal => _protectiveTrips;
+
+    /// <summary><c>setpoint_writes_total{result}</c> - rejections are counted, not just successes.</summary>
+    public IReadOnlyDictionary<SetpointResult, int> SetpointWritesTotal => _setpointWrites;
+
+    private static void Count<TKey>(Dictionary<TKey, int> counter, TKey key) where TKey : notnull
+        => counter[key] = counter.TryGetValue(key, out var n) ? n + 1 : 1;
 
     // ---------------------------------------------------------------- commands
 
@@ -121,13 +167,17 @@ public sealed class EquipmentSimulation
     {
         if (!double.IsFinite(ratePct) || ratePct is < 0 or > 100)
         {
+            Count(_setpointWrites, SetpointResult.RejectedOutOfRange);
             return SetpointResult.RejectedOutOfRange;
         }
 
         if (_state is not (EquipmentState.Idle or EquipmentState.Running or EquipmentState.Degraded))
         {
+            Count(_setpointWrites, SetpointResult.RejectedState);
             return SetpointResult.RejectedState;
         }
+
+        Count(_setpointWrites, SetpointResult.Accepted);
 
         _setpointPct = ratePct;
         _ticksSinceSetpointWrite = 0;
@@ -156,7 +206,18 @@ public sealed class EquipmentSimulation
             return false;
         }
 
-        if (PresentProtectiveConditions().Any(c => c != ProtectiveCondition.StopRequired))
+        // T10: "operator reset AND all protective conditions clear". STOP_REQUIRED is excluded
+        // because it is entered and left by the operator, not sensed — acknowledging the reset is
+        // what exits it. Every sensed condition still blocks.
+        // COD-R2-002: _presentConditions is last tick's sensed evaluation, and a demo injection
+        // can arrive between ticks, so the injected set is unioned in synchronously. The remaining
+        // asymmetry is deliberate: stale state may only cause a reset to be REFUSED (until the next
+        // tick re-evaluates), never granted.
+        var blocking = _presentConditions
+            .Concat(_injectedConditions)
+            .Any(c => c != ProtectiveCondition.StopRequired);
+
+        if (blocking)
         {
             return false;
         }
@@ -181,6 +242,7 @@ public sealed class EquipmentSimulation
     {
         RequireDemoProfile();
         _injectedConditions.Add(condition);
+        Count(_faultInjections, _options.FaultProfile);
     }
 
     public void ClearInjectedProtectiveConditions()
@@ -189,10 +251,24 @@ public sealed class EquipmentSimulation
         _injectedConditions.Clear();
     }
 
+    /// <summary>
+    /// Stops the protocol endpoint answering. Requires <see cref="FaultProfile.CommLoss"/>:
+    /// the profile is what makes the fault possible, injection is only what makes it happen
+    /// (EQUIPMENT_SIMULATOR.md §5). Without the gate the profile was inert and its AC-018 test was
+    /// really testing the injection API.
+    /// </summary>
     public void InjectCommLoss()
     {
         RequireDemoProfile();
+
+        if (_options.FaultProfile != FaultProfile.CommLoss)
+        {
+            throw new InvalidOperationException(
+                $"COMM_LOSS can only be injected into equipment configured with the CommLoss fault profile; this one is {_options.FaultProfile}.");
+        }
+
         _commLost = true;
+        Count(_faultInjections, _options.FaultProfile);
     }
 
     public void RestoreComm()
@@ -261,19 +337,37 @@ public sealed class EquipmentSimulation
             RawQuality = reading.Quality,
         };
 
+        _stateTicks[_state] = _stateTicks.TryGetValue(_state, out var ticks) ? ticks + 1 : 1;
+
         _tickCount++;
         _sequence++;
+
+        var previousElapsedMs = _elapsedMs;
         _elapsedMs += 100;
 
-        // §11: a sourceEpochMs wrap resets sequence at the same instant, so the two
-        // signals stay consistent and a consumer cannot read the wrap as a gap.
-        if (_elapsedMs % 0x1_0000_0000UL == 0)
+        // §11: a sourceEpochMs wrap resets sequence at the same instant, so the two signals stay
+        // consistent and a consumer cannot read the wrap as a gap.
+        if (EpochWrapped(previousElapsedMs, _elapsedMs))
         {
             _sequence = 0;
         }
 
         return _commLost || _state == EquipmentState.Offline ? null : sample;
     }
+
+    /// <summary>
+    /// True when the 32-bit <c>sourceEpochMs</c> view of elapsed milliseconds rolls over between
+    /// two consecutive ticks.
+    /// <para>
+    /// Testing this through <see cref="Tick"/> would take 43 billion calls, so it is a pure
+    /// function with its own test. The obvious formulation — <c>elapsed % 2^32 == 0</c> — is
+    /// <b>wrong</b> at a 100 ms cadence: elapsed is always a multiple of 100, 2^32 is not, and the
+    /// two only coincide at LCM(2^32, 100) = 107 374 182 400 ms. Sequence would have reset on every
+    /// twenty-fifth wrap, leaving the other twenty-four looking like an unexplained gap.
+    /// </para>
+    /// </summary>
+    internal static bool EpochWrapped(ulong beforeMs, ulong afterMs)
+        => (uint)(afterMs & 0xFFFF_FFFFUL) < (uint)(beforeMs & 0xFFFF_FFFFUL);
 
     private void AdvanceActuation()
     {
@@ -291,12 +385,26 @@ public sealed class EquipmentSimulation
         }
 
         var maxStep = MaxSlewPctPerSecond * TickSeconds;
-        _appliedPct += Math.Clamp(_setpointPct - _appliedPct, -maxStep, maxStep);
 
-        // The slew-limited rate the drive SHOULD have reached. With no drive-fault
-        // profile in the model these are equal; the comparison exists so that a future
-        // stuck-drive fault is detected rather than silently tolerated.
-        _expectedPct = _appliedPct;
+        // Two independent integrators. _expectedPct is the slew-limited response the drive OWES the
+        // setpoint; _appliedPct is what it actually did. Deriving one from the other makes the
+        // §3.3 tracking check a tautology that can never fire (COD-VFY-004).
+        _expectedPct += Math.Clamp(_setpointPct - _expectedPct, -maxStep, maxStep);
+
+        // COD-R2-001: drive lag is a DEMO hook, and a demo hook must never be able to block the
+        // safety path. A protective trip cuts the drive, so in FAULT the applied rate slews to zero
+        // whatever the injection says - otherwise "FAULT: rate forced 0" would be defeatable from
+        // outside L3, which is the one property AC-020 exists to guarantee.
+        // DRIVE_STUCK (OD-001): from T_stuck the drive ignores its setpoint. COD-R2-001 still
+        // applies - a stuck drive must not be able to survive a protective trip, so FAULT overrides
+        // the profile. That is physical too: the trip cuts the drive.
+        var stuck = _options.FaultProfile == FaultProfile.DriveStuck
+                    && _tickCount * TickSeconds >= _options.StuckTimeSeconds;
+
+        if (!stuck || _state == EquipmentState.Fault)
+        {
+            _appliedPct += Math.Clamp(_setpointPct - _appliedPct, -maxStep, maxStep);
+        }
     }
 
     private void AdvancePhysics()
@@ -308,7 +416,7 @@ public sealed class EquipmentSimulation
             : 0.0;
 
         _coolingLoss = _options.FaultProfile == FaultProfile.CoolingDegradation
-            ? Math.Min(0.9, elapsedSeconds / _options.CoolingTimeSeconds)
+            ? Math.Min(MaxCoolingLoss, elapsedSeconds / _options.CoolingTimeSeconds)
             : 0.0;
 
         var r = _appliedPct / 100.0;
@@ -322,7 +430,7 @@ public sealed class EquipmentSimulation
     {
         var r = _appliedPct / 100.0;
         var h = _health;
-        var load = _options.FaultProfile == FaultProfile.Overload ? 1.6 : 1.0;
+        var load = _options.FaultProfile == FaultProfile.Overload ? OverloadLoadFactor : 1.0;
 
         // The noise draws happen in a fixed order, unconditionally, so that enabling a
         // sensor fault cannot shift the random sequence of the other channels.
@@ -337,7 +445,7 @@ public sealed class EquipmentSimulation
         values[(int)SensorChannel.TorqueNm] = (42.0 * r * (1.0 + (0.45 * h)) * load) + nTorque;
         values[(int)SensorChannel.CurrentA] = (12.0 * r * (1.0 + (0.55 * h)) * load) + nCurrent;
         values[(int)SensorChannel.VoltageV] = 400.0 + nVoltage;
-        values[(int)SensorChannel.VibrationRms] = (2.2 * (0.35 + (0.65 * r)) * (1.0 + (6.0 * h * h))) + nVibration;
+        values[(int)SensorChannel.VibrationRms] = (2.2 * (0.35 + (0.65 * r)) * (1.0 + (VibrationHealthCoupling * h * h))) + nVibration;
         values[(int)SensorChannel.TemperatureC] = _temperatureC;
         values[(int)SensorChannel.OperationRatePct] = _appliedPct;
 
@@ -489,11 +597,14 @@ public sealed class EquipmentSimulation
         }
 
         var present = UpdateAndCollectProtectiveConditions(reading);
+        _presentConditions = present;
 
-        // T9. Evaluated in IDLE, RUNNING, and DEGRADED (§3.2). FAULT is latched, and
-        // STOPPING leaves only through T6 or its own timeout.
+        // T9, including STOPPING since 2026-09-15: §3.4 says any protective condition is sufficient
+        // for FAULT, and a machine slewing down through an over-temperature condition must still
+        // latch rather than coast into IDLE unacknowledged. FAULT itself stays latched.
         if (present.Count > 0
-            && _state is EquipmentState.Idle or EquipmentState.Running or EquipmentState.Degraded)
+            && _state is EquipmentState.Idle or EquipmentState.Running or EquipmentState.Degraded
+                      or EquipmentState.Stopping)
         {
             foreach (var condition in present)
             {
@@ -503,6 +614,11 @@ public sealed class EquipmentSimulation
             _state = EquipmentState.Fault;
             _setpointPct = 0;
             ProtectiveTripCount++;
+            foreach (var condition in present)
+            {
+                Count(_protectiveTrips, condition);
+            }
+
             Emit("PROTECTIVE_TRIP", string.Join(",", present));
             return;
         }
@@ -577,25 +693,6 @@ public sealed class EquipmentSimulation
         }
 
         return present;
-    }
-
-    /// <summary>Conditions present right now, used by <see cref="OperatorReset"/>.</summary>
-    private IEnumerable<ProtectiveCondition> PresentProtectiveConditions()
-    {
-        foreach (var condition in _injectedConditions)
-        {
-            yield return condition;
-        }
-
-        if (_temperatureC > TripTemperatureC)
-        {
-            yield return ProtectiveCondition.OverTemperature;
-        }
-
-        if (_stopRequired)
-        {
-            yield return ProtectiveCondition.StopRequired;
-        }
     }
 
     private void EvaluateDegradation(Reading reading)

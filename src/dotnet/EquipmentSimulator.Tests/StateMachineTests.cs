@@ -59,7 +59,14 @@ public sealed class StateMachineTests
     [Fact]
     public void ConnectTimeout_ReturnsToOfflineAfterTenSeconds()
     {
-        var sim = New(demo: true);
+        var sim = new EquipmentSimulation(new EquipmentOptions
+        {
+            EquipmentId = "eq-001",
+            Seed = 5,
+            FaultProfile = FaultProfile.CommLoss, // injection is gated on the profile
+            DemoProfile = true,
+        });
+
         sim.Connect();
         sim.InjectCommLoss(); // no telemetry can become valid
 

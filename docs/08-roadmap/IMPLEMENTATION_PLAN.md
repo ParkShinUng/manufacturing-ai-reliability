@@ -3,9 +3,12 @@
 **Phase 1 is AUTHORIZED** — `docs/10-human-review/v0.3/HUMAN_APPROVAL.md` records
 `APPROVED_WITH_CONDITIONS` with all conditions satisfied (2026-09-15).
 
-**It has not started.** Authorization removes a prohibition; it does not issue a task. Neither Claude
-nor Codex may begin implementation on their own initiative, on consensus, or because the gate is
-open. Work begins when the product owner asks for it.
+**Authorization removes a prohibition; it does not issue a task.** Neither Claude nor Codex may begin
+implementation on their own initiative, on consensus, or because the gate is open. Work begins when
+the product owner asks for it.
+
+The product owner asked for **Phase 1 on 2026-09-15**, and it is in progress. Every later phase is
+still unrequested, and this paragraph applies to each of them individually.
 
 > v0.3 expands the roadmap from 8 phases to **13** (Phase 0–12). v0.2 bundled observability, MLflow,
 > Kubernetes, and the dashboard into two large phases, which hid their dependencies and made "done"
@@ -19,7 +22,7 @@ open. Work begins when the product owner asks for it.
 - [x] **human approves the architecture** — APPROVED_WITH_CONDITIONS, all conditions satisfied (2026-09-15)
 
 ## Phase 1 — Equipment Simulator / HIL — **IN PROGRESS**
-Equipment physics and degradation model · equipment state machine (T1–T12) · 10 fault profiles ·
+Equipment physics and degradation model · equipment state machine (T1–T12) · 11 fault profiles ·
 **L3 self-protection**: protective trips and dead-man revert · deterministic seeding ·
 `sequence` and `sourceEpochMs` assignment.
 **Proof:** AC-018, AC-019, AC-020.

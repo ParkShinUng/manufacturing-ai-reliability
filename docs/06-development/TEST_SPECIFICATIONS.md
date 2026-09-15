@@ -170,7 +170,7 @@ the permissive side · **no stale data is accepted as fresh** (the unacceptable 
 
 | File | Proves |
 |---|---|
-| `FaultProfileSignatureTests.cs` | **AC-018** — the documented signature of all 10 fault profiles |
+| `FaultProfileSignatureTests.cs` | **AC-018** — the documented signature of all 11 fault profiles |
 | `DeterminismTests.cs` | **AC-018 / PROP-03** — identical seed ⇒ bit-identical telemetry; different seed ⇒ different telemetry; `sequence` monotonicity and the restart reset |
 | `OodProfileTests.cs` | **AC-019** — the rpm↔rate relationship is broken while every value stays in range and no range check fires |
 | `ProtectiveConditionTests.cs` | **AC-020** — the four sensed protective conditions plus `STOP_REQUIRED`, `FAULT` latching, operator reset, and the zero-external-dependency proof that L3 survives total platform loss |

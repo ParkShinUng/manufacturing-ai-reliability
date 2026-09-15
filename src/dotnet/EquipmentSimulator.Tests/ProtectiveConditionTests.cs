@@ -45,9 +45,10 @@ public sealed class ProtectiveConditionTests
     [Fact]
     public void L3RunsWithNoPlatformDependencyAtAll()
     {
-        // The "entire platform stopped" half of AC-020 is a structural property:
-        // the simulator assembly references nothing but the framework, so there is
-        // no component whose absence could disable the protective trip.
+        // Structural half of AC-020 only: this proves the simulator CAN run with nothing
+        // else present - there is no component whose absence could disable the trip. It
+        // does NOT prove the trips actually run in that condition (COD-VFY-006) -
+        // VerificationRound1Tests.L3Behaviour_HoldsWithNothingButTicks is that half.
         var external = typeof(EquipmentSimulation).Assembly
             .GetReferencedAssemblies()
             .Select(a => a.Name!)
@@ -62,12 +63,11 @@ public sealed class ProtectiveConditionTests
     [Fact]
     public void OverTemperature_LatchesFaultAndForcesRateZero()
     {
-        // Cooling degradation drives T_target to 22 + 32/(1-0.675) = 120 degC and beyond.
+        // Since OD-002 raised the cap on c from 0.9 to 0.95, T_target is
+        // 22 + 32/(1 - 0.75*0.95) = 133.3 degC against a 120 degC trip. The old 0.46 degC margin
+        // made this crossing slow and fragile; it is now a comfortable 13.3 degC.
         var sim = Running(FaultProfile.CoolingDegradation);
 
-        // The asymptote is 22 + 32/(1 - 0.75*0.9) = 120.46 degC, only 0.46 degC over the
-        // trip point, so the crossing is slow by construction. See the note in
-        // EQUIPMENT_SIMULATOR.md §11.
         TickUntil(sim, () => sim.State == EquipmentState.Fault, 60_000, "over-temperature trip");
 
         Assert.Contains(ProtectiveCondition.OverTemperature, sim.LatchedConditions);
@@ -85,8 +85,9 @@ public sealed class ProtectiveConditionTests
     [Fact]
     public void OverVibration_LatchesFault()
     {
-        // Bearing degradation drives vibration to 15.4 mm/s at h = 1, which is under
-        // the 25 mm/s trip, so the condition is injected directly instead.
+        // Injected here to test the latch precisely and quickly. The PHYSICS path is
+        // BearingDegradation_RisesThroughDegradedToTheOverVibrationTrip, which reaches 25 mm/s
+        // from the profile alone now that OD-002 raised the health coupling to 12.0.
         var sim = Running();
         sim.InjectProtectiveCondition(ProtectiveCondition.OverVibration);
         sim.Tick();

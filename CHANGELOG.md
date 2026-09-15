@@ -1,5 +1,73 @@
 # Documentation Changelog
 
+## Phase 1 verification - dual-agent review and the two decisions it produced (2026-09-15)
+
+Three Codex rounds against commit `8d24190`. Codex rejected twice, then accepted.
+Transcripts and classifications: `reviews/phase-1/`.
+
+### Defects found and closed
+
+Codex returned 1 P0 and 5 P1 on the first pass and was right on all six; nothing was rejected.
+
+- **P0 - an operator could reset a machine whose safety sensor was still dead.** The reset guard
+  evaluated its own, smaller set of protective conditions than the tick path. The root cause was not
+  the missing conditions but that **two independent evaluations of "is this machine safe" existed**
+  and the one guarding the reset was the weaker; the reset now reads what the tick just computed.
+- **The `sourceEpochMs` wrap reset fired on one rollover in twenty-five.** `elapsed % 2^32 == 0`
+  cannot hold at a 100 ms cadence: elapsed is always a multiple of 100, 2^32 is not, and they
+  coincide only at LCM = 107374182400 ms. Consumers would have read 24 of every 25 wraps as a gap.
+- **`STOPPING` could not latch `FAULT`.** Section 3.4 says any protective condition is sufficient;
+  the `T9` table omitted `STOPPING`. A machine slewing down through an over-temperature condition
+  reached `IDLE` unlatched, escaping operator acknowledgement. The prose was right, the table wrong.
+- **The drive-tracking degradation condition was a tautology** - it compared the applied rate against
+  a variable assigned the applied rate, so it could never fire.
+- **`COMM_LOSS` was inert.** Its AC-018 test proved the fault-injection API existed, not that the
+  profile produced a signature. Claude argued once that onset belongs to injection and was wrong:
+  AC-018 requires the PROFILE to produce the signature.
+- **A round 1 fix created a new defect.** The drive-lag test hook froze the applied rate while a
+  protective trip set only the setpoint, so a demo hook could defeat "FAULT: rate forced 0" - the
+  one property AC-020 exists to guarantee.
+
+### What the fixes uncovered, and how the product owner resolved it
+
+Two findings could not be closed by an implementer, because both meant a documented safety condition
+had no cause in the model. Raised as OD-001 and OD-002 and decided by the product owner:
+
+- **OD-001, resolved by option A.** No fault profile could make a drive stop tracking its setpoint,
+  so `T7` had a trigger nothing could pull. Added **`DRIVE_STUCK`** - `r_applied` freezes at
+  `T_stuck`, demo default 60 s. **AC-018 now covers 11 profiles, not 10.** The demo-only
+  `InjectDriveLag()` hook was removed: a test hook that duplicates a profile is a second way for the
+  two to drift apart.
+- **OD-002, resolved by option B.** Two of the three sensed protective thresholds were above
+  anything the model could produce - 25 mm/s against a 15.4 mm/s worst case, 32 A against 19.2 A -
+  and the third had 0.46 degC of margin. **The innermost safety layer was unexercisable by any
+  scenario the demo runs.** Fault severity was raised rather than the safety limits lowered:
+
+  | Constant | Was | Now | Worst case | Limit |
+  |---|---|---|---|---|
+  | vibration health coupling | 6.0 | 12.0 | 28.6 mm/s | 25.0 |
+  | `OVERLOAD` load factor | 1.6 | 2.8 | 33.6 A | 32 |
+  | `COOLING_DEGRADATION` cap on `c` | 0.9 | 0.95 | 133.3 degC | 120 |
+
+  Lowering the limits would have compressed the `DEGRADED` -> `FAULT` ladder that `T7`/`T8`/`T9`
+  depend on. A simulator that cannot produce a dangerous machine is a limitation of the fault model,
+  not evidence that 25 mm/s is the wrong limit.
+
+  Consequence worth stating plainly: **AC-020 is now proven by physics rather than by injection.**
+  The over-vibration, over-current and over-temperature trips all fire from a configured profile.
+
+### Also in this change
+
+- Section 17 observability counters on `EquipmentSimulation` - state ticks, protective trips by
+  condition, setpoint writes by result, fault injections. Every label is an enum, so the label set is
+  bounded and `equipmentId` is never one. The exporter needs a metrics library, which is a dependency
+  decision, so it belongs to the Phase 2 host. `simulator_loop_overruns_total` arrives with the loop
+  host for the same reason: there is no loop to overrun yet.
+- `scripts/README.md` rewritten around what the directory is for. `finalize-rename.ps1` is marked
+  retired - the rename completed and its path constants no longer refer to anything.
+
+62 unit tests pass.
+
 ## Phase 1 - Equipment Simulator domain core (2026-09-15)
 
 First application code in the repository. The gate was opened by the human approval recorded in
@@ -29,7 +97,8 @@ First application code in the repository. The gate was opened by the human appro
 
 ### Implemented
 `src/dotnet/EquipmentSimulator/` - physics and degradation, the T1-T12 state machine with its three
-forbidden transitions, all 10 fault profiles, L3 protective trips, the 30 s dead-man revert, and
+forbidden transitions, all 10 fault profiles (**11 since OD-001** - see the entry above), L3
+protective trips, the 30 s dead-man revert, and
 `sequence` / `sourceEpochMs` assignment. The assembly references **nothing outside the framework**,
 which is how AC-020's "with the entire platform stopped" is asserted rather than claimed.
 
