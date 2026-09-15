@@ -1,8 +1,9 @@
-# Toolchain Baseline — 2026-09-14
+# Toolchain Baseline — 2026-09-14 (.NET verified 2026-09-15)
 
 The baseline favors supported/LTS or mature stable releases over preview releases.
 
-- .NET SDK: **10.0.401**, target framework `net10.0`, C# 14
+- .NET SDK: **10.0.400**, target framework `net10.0`, C# 14 — *verified installed 2026-09-15; the
+  previously asserted 10.0.401 was never verified and is corrected here per the procedure below*
 - Python: **3.13.15** for conservative ML package compatibility
 - Node.js: **24 LTS**; pin exact patch in `.nvmrc`/container at repository initialization
 - Apache Kafka: **4.3.1**, KRaft mode

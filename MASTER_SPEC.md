@@ -164,7 +164,8 @@ Code never overrides documentation. Conflicts require a documentation change fir
 
 **Specification version: v0.3.**
 **Human decision: APPROVED_WITH_CONDITIONS — all conditions satisfied (2026-09-15).**
-**Gate: OPEN. Implementation: NOT STARTED.**
+**Gate: OPEN. Phase 1: IN PROGRESS — equipment simulator core implemented 2026-09-15
+(`src/dotnet/EquipmentSimulator/`, AC-018/019/020, PROP-03). Phase 2 is not authorized.**
 
 The dual-agent engineering review (Claude Code + Codex) completed with 0 unresolved P0 and P1.
 The product owner recorded:

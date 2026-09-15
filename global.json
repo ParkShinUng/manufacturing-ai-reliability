@@ -1,0 +1,7 @@
+{
+  "//": "TOOLCHAIN.md pins the SDK. latestPatch allows 10.0.4xx servicing updates but refuses a different feature band, so a machine with only 10.0.1xx fails loudly instead of silently building on a different compiler.",
+  "sdk": {
+    "version": "10.0.400",
+    "rollForward": "latestPatch"
+  }
+}

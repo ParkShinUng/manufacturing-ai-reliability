@@ -1,5 +1,44 @@
 # Documentation Changelog
 
+## Phase 1 - Equipment Simulator domain core (2026-09-15)
+
+First application code in the repository. The gate was opened by the human approval recorded in
+`docs/10-human-review/v0.3/HUMAN_APPROVAL.md`, and Phase 1 was then explicitly requested.
+
+### Documentation corrected before implementing (Definition of Ready)
+- **Phase 1/2 boundary.** `IMPLEMENTATION_PLAN.md` listed the protocol server endpoints under
+  Phase 2 while its ordering rationale implied Phase 1. The explicit deliverable list wins: the
+  **protocol servers are Phase 2**, and Phase 1 is the library-free domain core. This also means no
+  OPC UA or Modbus dependency has been chosen yet - that needs an ADR and a Codex challenge.
+- **AC-001 moved to Phase 2.** It requires canonical telemetry and a gateway process, neither of
+  which exists in Phase 1, so it could never have been proven there.
+- **.NET SDK 10.0.401 -> 10.0.400.** The pinned patch was asserted, never verified, and is not
+  installed; `TOOLCHAIN.md`'s own procedure says to correct the document first.
+
+### Model findings recorded rather than tuned away
+- **Additive noise needed a physical floor.** At rest `currentA = 0 +- N(0, 0.06)` goes negative,
+  which is `VALUE_OUT_OF_RANGE` on a **safety-required** channel and trips an idle machine within
+  2 s. Readings are now clamped at a channel's lower bound where that bound is physical; the upper
+  bound is deliberately left unclamped so a genuine excursion stays visible.
+- **The degradation rate-deviation check is measured against the slew-limited expected rate**, not
+  the raw command. A full-range start takes 6.7 s at 15 %/s, so the literal reading put every cold
+  start into `DEGRADED` for 30 s, contradicting `T4`.
+- **The over-temperature trip has 0.46 degC of margin.** The only physics path to 120 degC is
+  `COOLING_DEGRADATION` at full rate, asymptotic at 120.46 degC. Reachable but slow and sensitive to
+  `T_ambient`. Recorded in `EQUIPMENT_SIMULATOR.md` 11; changing it is a model decision.
+
+### Implemented
+`src/dotnet/EquipmentSimulator/` - physics and degradation, the T1-T12 state machine with its three
+forbidden transitions, all 10 fault profiles, L3 protective trips, the 30 s dead-man revert, and
+`sequence` / `sourceEpochMs` assignment. The assembly references **nothing outside the framework**,
+which is how AC-020's "with the entire platform stopped" is asserted rather than claimed.
+
+`DeterministicRandom` is xoshiro256** implemented in-repository: `System.Random`'s algorithm is an
+implementation detail that has changed between .NET versions, so a seeded run with it is
+reproducible on one runtime only - which does not satisfy NFR-010.
+
+44 unit tests in `src/dotnet/EquipmentSimulator.Tests/` prove AC-018, AC-019, AC-020 and PROP-03.
+
 ## 0.3.0 — Implementation Ready Candidate (dual-agent reviewed, awaiting human approval)
 
 Engineering review: **Claude Code (primary engineer) + Codex (independent challenger)**, 3 rounds.

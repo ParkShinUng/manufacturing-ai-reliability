@@ -8,7 +8,7 @@
 
 | Suite | Location | Runs |
 |---|---|---|
-| Unit | alongside source | every commit |
+| Unit | alongside source, e.g. `src/dotnet/EquipmentSimulator.Tests/` | every commit |
 | **Contract** | `tests/contract/` | every commit |
 | **Consistency** | `tests/contract/consistency_check.mjs` | every commit |
 | **Safety invariants** | `tests/contract/safety_invariants.mjs` | every commit |
@@ -163,6 +163,23 @@ the permissive side · **no stale data is accepted as fresh** (the unacceptable 
 | LOAD-003 | Sustained command rate | T-04, L-06 |
 | LOAD-004 | End-to-end latency under load | **L-07 P95 ≤ 1 200 ms** |
 | LOAD-005 | Projection rebuild from 6 h telemetry | R-08 ≤ 10 min |
+
+## 5a. Phase 1 unit tests — implemented
+
+`src/dotnet/EquipmentSimulator.Tests/` (44 tests, `dotnet test src/dotnet/Mair.sln`).
+
+| File | Proves |
+|---|---|
+| `FaultProfileSignatureTests.cs` | **AC-018** — the documented signature of all 10 fault profiles |
+| `DeterminismTests.cs` | **AC-018 / PROP-03** — identical seed ⇒ bit-identical telemetry; different seed ⇒ different telemetry; `sequence` monotonicity and the restart reset |
+| `OodProfileTests.cs` | **AC-019** — the rpm↔rate relationship is broken while every value stays in range and no range check fires |
+| `ProtectiveConditionTests.cs` | **AC-020** — the four sensed protective conditions plus `STOP_REQUIRED`, `FAULT` latching, operator reset, and the zero-external-dependency proof that L3 survives total platform loss |
+| `StateMachineTests.cs` | T1–T12, the three forbidden transitions, and "`RUNNING` is the only AI-eligible state" |
+| `ActuationTests.cs` | slew limit, dead-man revert, reject-never-clamp, setpoint idempotency, fail-closed configuration, demo-only fault injection |
+
+The determinism suite deliberately contains a **negative** case: without
+`DifferentSeed_ProducesDifferentTelemetry`, an implementation that emitted no noise at all would
+satisfy PROP-03 trivially.
 
 ## 6. Property-based tests
 

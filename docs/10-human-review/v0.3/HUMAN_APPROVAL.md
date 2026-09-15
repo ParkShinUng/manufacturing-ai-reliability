@@ -74,7 +74,7 @@ All conditions are satisfied (see below). Phase 1 is authorized; implementation 
 | The three architecture decisions | **Approved**; DEC-001/004/009 and ADR-0011/0014/0019 human-review sections closed |
 | Conditions | **All satisfied** |
 | **Phase 1** | **Authorized** |
-| **Implementation** | **NOT STARTED** |
+| **Implementation** | **Phase 1 IN PROGRESS** — started 2026-09-15 at the product owner's request |
 
 ### Authorized is not the same as started
 
@@ -83,8 +83,12 @@ reading this file must not treat "authorized" as an instruction to start writing
 removes the prohibition; it does not issue a task.
 
 The first Phase 1 work, when requested, is
-[`docs/11-service-design/EQUIPMENT_SIMULATOR.md`](../../11-service-design/EQUIPMENT_SIMULATOR.md),
-proving AC-001, AC-002, AC-018, AC-019, AC-020.
+[`docs/11-service-design/EQUIPMENT_SIMULATOR.md`](../../11-service-design/EQUIPMENT_SIMULATOR.md).
+
+**It was requested on 2026-09-15** and the domain core is implemented, proving AC-018, AC-019,
+AC-020 and PROP-03. AC-001 and AC-002 were reassigned to Phase 2 during the Definition-of-Ready
+check, because both require the Edge Gateway and neither can be evaluated by the simulator alone.
+Phase 2 remains unrequested.
 
 ### What remains true regardless of this approval
 

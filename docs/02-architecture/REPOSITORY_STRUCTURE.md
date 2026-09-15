@@ -25,6 +25,7 @@ manufacturing-ai-reliability/
 │  │  ├─ Mair.sln
 │  │  ├─ BuildingBlocks/
 │  │  ├─ EquipmentSimulator/
+│  │  ├─ EquipmentSimulator.Tests/    # unit tests live alongside source (TEST_SPECIFICATIONS.md 1)
 │  │  ├─ EdgeGateway/
 │  │  ├─ SafetySupervisor/
 │  │  ├─ ControlService/
@@ -49,6 +50,7 @@ manufacturing-ai-reliability/
 │  ├─ failure/
 │  ├─ load/
 │  └─ e2e/
+├─ global.json                        # pins the .NET SDK feature band (TOOLCHAIN.md)
 ├─ scripts/
 └─ reports/
    ├─ load/

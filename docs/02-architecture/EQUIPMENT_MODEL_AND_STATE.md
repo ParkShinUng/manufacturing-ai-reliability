@@ -72,6 +72,14 @@ T_ambient   = 22.0 °C
 This gives a thermally realistic ~3-minute response, so an overheat fault develops on a timescale a
 human can observe in a demo and an RUL model can actually learn.
 
+**Physical floor on additive noise** (added 2026-09-15 during Phase 1 implementation). The additive
+Gaussian terms above are clamped at a channel's lower bound wherever that bound is a physical floor
+— `rpm`, `currentA`, `vibrationRms`, `voltageV`, and `operationRatePct` at 0. Without the clamp a
+channel resting at zero produces negative readings; `currentA` is **safety-required**, so a negative
+reading is `VALUE_OUT_OF_RANGE` → `BAD` → a protective trip within 2 s, and an *idle* machine would
+fault itself while doing nothing. Only the **lower** bound is clamped: an upper excursion is a real
+condition and must stay visible as `VALUE_OUT_OF_RANGE`.
+
 ### 1.4 Rate-limited actuation
 
 The drive does not jump to a new setpoint. Applied rate slews:
@@ -175,8 +183,13 @@ Any one is sufficient:
 - any **safety-required** sensor carrying an UNCERTAIN-contributing flag;
 - `vibrationRms` > 12.0 mm/s;
 - `temperatureC` > 95 °C;
-- observed `operationRatePct` deviates from commanded by > 10 pp for > `slew_grace` 5 s
-  (i.e. the drive is not tracking its setpoint).
+- observed `operationRatePct` deviates from the **slew-limited expected rate** by > 10 pp for
+  > `slew_grace` 5 s (i.e. the drive is not tracking its setpoint). *Clarified 2026-09-15:* the
+  comparison is against the expected rate, not the raw commanded value. A legitimate full-range
+  change takes 6.7 s at 15 %/s (§1.4), so comparing against the command would put **every cold
+  start** into `DEGRADED` and hold it there through the 30 s `T8` window — which contradicts `T4`,
+  where `IDLE → RUNNING` is the normal start path. The parenthetical above is the governing
+  intent: a drive that keeps pace with its own slew limit *is* tracking.
 
 ### 3.4 Protective conditions (`→ FAULT`)
 

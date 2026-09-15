@@ -18,17 +18,35 @@ open. Work begins when the product owner asks for it.
 - [x] simulator physics, OT address maps, state machines, failure matrix, 12 service designs
 - [x] **human approves the architecture** — APPROVED_WITH_CONDITIONS, all conditions satisfied (2026-09-15)
 
-## Phase 1 — Equipment Simulator / HIL — **AUTHORIZED, NOT STARTED**
+## Phase 1 — Equipment Simulator / HIL — **IN PROGRESS**
 Equipment physics and degradation model · equipment state machine (T1–T12) · 10 fault profiles ·
-**L3 self-protection**: protective trips and dead-man revert · deterministic seeding.
-**Proof:** AC-001, AC-018, AC-019, AC-020.
-**Depends on:** nothing. This is why it is first.
+**L3 self-protection**: protective trips and dead-man revert · deterministic seeding ·
+`sequence` and `sourceEpochMs` assignment.
+**Proof:** AC-018, AC-019, AC-020.
+**Depends on:** nothing, and no external library. This is why it is first.
+
+> **Scope boundary, clarified at Phase 1 initialisation.** The simulator's **OPC UA and Modbus TCP
+> server endpoints are Phase 2**, not Phase 1. Phase 2's own deliverable list says "Protocol server
+> endpoints per `OT_PROTOCOL_MAPPING.md`", and the phase-ordering note below previously implied the
+> opposite in looser prose. The explicit deliverable list wins; the note is corrected.
+>
+> Consequence: Phase 1 delivers the **domain core** — physics, state, faults, L3 self-protection —
+> behind an in-process interface, with **zero external dependencies**. That is what makes it
+> genuinely first: no OPC UA or Modbus library has been selected yet, and selecting one requires an
+> ADR (NFR-012, `AGENTS.md`) plus a Codex challenge, since protocol choice is on the mandatory
+> participation list (`DUAL_AGENT_PROTOCOL.md` §2).
+>
+> **AC-001 moved to Phase 2.** It requires 20 machines publishing *canonical telemetry* with no
+> unhandled *gateway* exception; canonical telemetry is produced by the Edge Gateway, so Phase 1
+> cannot prove it.
 
 ## Phase 2 — Edge Gateway + OPC UA / Modbus
-Protocol server endpoints per `OT_PROTOCOL_MAPPING.md` · gateway client sessions · normalisation ·
-closed quality vocabulary and derived `quality.overall` · reconnect without process restart ·
-bounded buffering with drop-oldest.
-**Proof:** AC-002, AC-021, AC-022, AC-023.
+Simulator-side **protocol server endpoints** per `OT_PROTOCOL_MAPPING.md` · gateway client sessions ·
+normalisation · closed quality vocabulary and derived `quality.overall` · reconnect without process
+restart · bounded buffering with drop-oldest.
+**Proof:** **AC-001**, AC-002, AC-021, AC-022, AC-023.
+**Prerequisite:** an ADR selecting the OPC UA and Modbus libraries, challenged by Codex (protocol
+choice is on the mandatory participation list).
 **Depends on:** Phase 1 (nothing to read otherwise).
 
 ## Phase 3 — Kafka Event Backbone
@@ -95,7 +113,7 @@ Codex was asked to challenge this ordering. It is retained, with the dependencie
 
 | Constraint | Why |
 |---|---|
-| 1 → 2 | the gateway has nothing to read until the simulator serves protocol endpoints |
+| 1 → 2 | Phase 2 adds the protocol servers **to** the Phase 1 domain core and then reads them; the core must exist first, and it is deliberately library-free so Phase 1 cannot be blocked by a dependency decision |
 | 2 → 3 | the backbone has nothing to carry until telemetry is normalised |
 | 3 → 5 | features come from the stream |
 | 5 → 6 | gates have nothing to evaluate without predictions |

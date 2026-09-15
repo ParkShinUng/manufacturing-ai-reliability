@@ -12,12 +12,14 @@
 | Specification | **v0.3 — Implementation Ready Candidate** |
 | Engineering review | **Claude Code + Codex, 3 rounds, complete** |
 | Human decision | **APPROVED_WITH_CONDITIONS** — all conditions satisfied (2026-09-15) |
-| Implementation | **NOT STARTED** (authorized, awaiting an explicit request) |
-| Project state | **`V0.3_APPROVED_PHASE_1_AUTHORIZED`** — implementation not started |
+| Implementation | **Phase 1 IN PROGRESS** — requested and started 2026-09-15 |
+| Project state | **`V0.3_APPROVED_PHASE_1_IN_PROGRESS`** |
 | Claude–Codex consensus | **CONVERGED** — Codex final verdict `IMPLEMENTATION_READY`, 0 P0, 0 P1 |
 
-**No application code was written.** The repository contains specifications, decisions, contracts,
-diagrams, and test specifications only. Three dependency-free verification scripts exist under
+**No application code was written for this review.** The packet below describes the repository as it
+stood at approval: specifications, decisions, contracts, diagrams, and test specifications only.
+Application code first appeared on 2026-09-15, after the gate opened and Phase 1 was requested.
+Three dependency-free verification scripts exist under
 `tests/contract/` and all three pass.
 
 ## 2. What changed from v0.2, in one paragraph

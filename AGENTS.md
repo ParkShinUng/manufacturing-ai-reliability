@@ -5,7 +5,7 @@ Before modifying code or creating implementation files, read `MASTER_SPEC.md` an
 ## Implementation gate — CHECK THIS FIRST, EVERY SESSION
 
 **Specification status: v0.3. Human decision: APPROVED_WITH_CONDITIONS — all conditions satisfied
-(2026-09-15). Gate: OPEN. Phase 1 authorized. Implementation: NOT STARTED.**
+(2026-09-15). Gate: OPEN. Phase 1: IN PROGRESS — equipment simulator core implemented 2026-09-15.**
 
 Before doing ANY implementation work, read
 `docs/10-human-review/v0.3/HUMAN_APPROVAL.md`.
@@ -25,8 +25,13 @@ All four decisions are resolved and **all conditions are satisfied**. The gate i
 
 **Authorized is not the same as started.** The approval removes a prohibition; it does not issue a
 task. Do **not** begin writing application code because this file says the gate is open — begin only
-when the product owner asks for specific work. When they do, Phase 1 is
-`docs/11-service-design/EQUIPMENT_SIMULATOR.md` (AC-001, AC-002, AC-018, AC-019, AC-020).
+when the product owner asks for specific work.
+
+The product owner asked for Phase 1 on **2026-09-15**. The equipment simulator domain core is
+implemented in `src/dotnet/EquipmentSimulator/` and proves **AC-018, AC-019, AC-020** plus
+**PROP-03**. `AC-001` and `AC-002` moved to Phase 2 because they require the Edge Gateway. The OPC UA
+and Modbus **server endpoints are Phase 2** and need an ADR selecting the libraries before any
+dependency is added. This authorization does **not** extend to Phase 2 — ask first.
 
 Every change still follows `DEFINITION_OF_READY.md` and `DUAL_AGENT_PROTOCOL.md`: documentation and
 contracts first, Codex challenge where the mandatory list applies, tests mapped to AC IDs.
