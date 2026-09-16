@@ -115,3 +115,56 @@ resolved by the same decision rather than separately.
 §2.2: vibration coupling 6.0 → 12.0, `OVERLOAD` ×1.6 → ×2.8, `c` cap 0.9 → 0.95. All three sensed
 protective conditions are now reachable from a documented fault profile, so `AC-020` is proven by
 physics rather than by injection. The thresholds in §3.4 were not touched.
+
+---
+
+# OD-003 — RESOLVED 2026-09-16 — Modbus TCP cannot enforce a read-only gateway the way the contract claims
+
+> **Decision: option A.** Two Modbus listeners — read-only `5020` for the gateway, write-capable
+> `5021` for the Control Service. Applied in `OT_PROTOCOL_MAPPING.md` §2.1.
+
+`OT_PROTOCOL_MAPPING.md` obligation 9 and `EQUIPMENT_SIMULATOR.md` §16 both state that the gateway's
+OT session is provisioned **without write permission**, so that "the gateway is read-only toward
+equipment" is enforced by the server rather than trusted of the client. This is the protocol-level
+expression of **FR-035**, which is a P0 safety requirement: the Control Service is the sole
+application writer to equipment.
+
+For OPC UA this is implementable — sessions, users and roles exist.
+
+**For Modbus TCP it is not.** Modbus TCP has no authentication, no session identity, and no
+per-client permission model. A TCP connection carries a unit id, a function code and an address;
+there is no principal. There is nothing to provision and nothing for the server to check.
+
+Found while challenging ADR-0020: the ADR repeated the claim from the contract without noticing that
+one of the two protocols cannot satisfy it.
+
+### Options
+
+| | Option | Consequence |
+|---|---|---|
+| A | **Two listeners.** A read-only Modbus listener for the gateway that rejects every write function code with exception `0x01`, and a separate write-capable listener for the Control Service. | Genuinely server-enforced: the gateway's listener has no code path that writes, so the property holds without credentials. Costs a second port (the current map defines only `5020`), which is a contract change, and the separation is only as strong as the network policy that keeps the gateway off the write port. |
+| B | **Network policy only.** One listener; a Kubernetes NetworkPolicy or firewall rule permits the write function codes only from the Control Service's address. | No contract change. But enforcement moves out of the application entirely, so it cannot be proven by an acceptance test in this repository, and `AC-039` would have to be reworded. |
+| C | **Document the exception.** State plainly that Modbus-side read-only behaviour is *trusted of the gateway*, not enforced, and that OPC UA is the protocol where FR-035 is enforced at the OT boundary. | Honest and free, but it leaves a P0 safety requirement unenforced on one of the two protocols, which is exactly the class of gap the v0.2 review existed to remove. |
+
+**Recommendation: A.** It is the only option where the property is true inside the software, which
+means it is the only one an acceptance test can prove. B and C both move the guarantee somewhere this
+repository cannot demonstrate it, and the project's own standard is that an unprovable claim is an
+assertion.
+
+A second port is a real cost and a real contract change, which is why this is a decision rather than
+an implementation detail.
+
+**Status: RESOLVED — option A, 2026-09-16.** `OT_PROTOCOL_MAPPING.md` §2.1 now defines a read-only
+listener on `5020` and a write-capable listener on `5021`, and §3 obligation 9 states the mechanism
+per protocol instead of asserting one that Modbus cannot provide.
+
+The residual risk is recorded rather than hidden: **the separation is only as strong as the network
+policy that keeps the gateway off `5021`**. A gateway misconfigured to `5021` can write, and option A
+does not prevent that.
+
+What option A buys over option B is something else, and it is worth stating precisely. With the
+correct port, **no defect or compromise in the gateway can produce a write at all** — the connection
+it holds carries no write function codes. Option B would have to filter by Modbus *function code* to
+achieve the same thing, which an IP-and-port network policy cannot do without deep packet
+inspection. So A moves the failure mode from "any gateway bug can write" to "only a wrong port can
+write", and a port is a reviewable configuration value.

@@ -11,6 +11,25 @@ The baseline favors supported/LTS or mature stable releases over preview release
 - PostgreSQL: major **18**, exact patch pinned in container manifest at repository initialization
 - Container images: pin exact tags/digests in reproducible deployment profiles; avoid `latest`
 
+## OT protocol libraries — pinned by ADR-0020 (accepted 2026-09-16)
+
+| Component | Package | Version | Licence |
+|---|---|---|---|
+| simulator, OPC UA server | `OPCFoundation.NetStandard.Opc.Ua.Server` | **1.5.378.176** | MIT (OPC Foundation MIT License 1.00) |
+| edge gateway, OPC UA client | `OPCFoundation.NetStandard.Opc.Ua.Client` | **1.5.378.176** | MIT |
+| both, configuration and certificates | `OPCFoundation.NetStandard.Opc.Ua.Configuration` | **1.5.378.176** | MIT |
+| simulator and gateway, Modbus TCP | `NModbus` | **3.0.83** | MIT |
+
+`OPCFoundation.NetStandard.Opc.Ua.Core` arrives transitively and is not referenced directly. The
+`OPCFoundation.NetStandard.Opc.Ua` **meta package is deliberately not used** — it has no framework
+assets of its own and pulls in GDS and complex-type assemblies neither service needs.
+
+Two verification steps are **outstanding** and must run before the first Phase 2 commit, per the
+procedure above: a licence scan of the full transitive graph (only the direct packages have been
+checked), and resolution of exact transitive versions into a lockfile. `NModbus` targets
+`net6.0`/`netstandard`/`net46` rather than `net10.0`; it loads on `net10.0`, but that it is not being
+rebuilt against current targets is a maintenance signal worth watching.
+
 ## Verification procedure at Phase 1 initialization
 
 The versions above were recorded on 2026-09-14 and are **asserted, not verified**. Before the first

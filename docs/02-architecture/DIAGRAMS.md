@@ -214,11 +214,11 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Z1["OT simulation zone"]
-        SIM["simulator<br/>ONE writable node per equipment"]
+        SIM["simulator<br/>ONE writable node per equipment<br/>Modbus: read-only :5020, write :5021"]
     end
     subgraph Z2["Edge zone"]
-        GW["gateway - READ-ONLY session"]
-        CTL["control-service - THE write identity"]
+        GW["gateway - READ-ONLY<br/>OPC UA session / Modbus :5020"]
+        CTL["control-service - THE writer<br/>OPC UA: only identity granted / Modbus: :5021"]
         SUP["supervisor - NO equipment credentials"]
     end
     subgraph Z3["Data / AI zone"]
@@ -231,7 +231,7 @@ flowchart TB
     end
 
     GW -->|read| SIM
-    CTL -->|"WRITE (only identity granted)"| SIM
+    CTL -->|"WRITE - the only application write path"| SIM
     SUP -->|"gRPC mTLS, no OT creds"| CTL
     Z3 -.->|"no path to equipment"| Z1
     DASH --> API
@@ -243,3 +243,9 @@ flowchart TB
 
 The dotted edges are the important ones: they are paths that **must not exist**, and each is asserted
 by a test (AC-037, AC-039).
+
+The gateway's read-only property is enforced differently per protocol (OD-003). On OPC UA it is a
+session without write permission. Modbus TCP has no identity, so it is the **listener split**: the
+gateway connects to `5020`, which has no write code path. That holds against any gateway defect, but
+**not** against a gateway misconfigured to `5021` — that case is network policy, and it is the one
+equipment-write restriction in this diagram that is not enforced by the application.

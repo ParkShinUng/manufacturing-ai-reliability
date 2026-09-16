@@ -27,7 +27,9 @@ for any hop, which is what allowed the self-asserted `source` field to pass for 
 | Dashboard → Operations API | session cookie / JWT with role claims | same | `viewer` (read) / `operator` (read + `STOP_REQUIRED` reset + demo faults) |
 | Operations API → simulator admin | mTLS, demo profile only | private network, demo profile only | endpoint **absent** from the production-like build |
 | Gateway → equipment (OPC UA) | `Basic256Sha256`, `SignAndEncrypt` | `None` | **read-only session, enforced by the server** |
-| Control Service → equipment | as above | as above | the only identity granted write on the setpoint node/register |
+| Gateway → equipment (Modbus TCP) | **none — the protocol has no identity** | `None` | **read-only listener `5020`**: every write function code is refused with exception `0x01`. Structural, not credential-based (OD-003) |
+| Control Service → equipment (OPC UA) | `Basic256Sha256`, `SignAndEncrypt` | `None` | the only identity granted write on the setpoint node |
+| Control Service → equipment (Modbus TCP) | **none — the protocol has no identity** | `None` | write listener `5021`, reachable only by the Control Service by **network policy**. This is the one place where an equipment-write restriction depends on infrastructure rather than on the application |
 | Services → Kafka | TLS + SASL, per-service principals | private network | per-topic ACLs; no service may write a topic it does not produce |
 
 **A global shared secret is forbidden in every profile.** The local token is per-service, is mounted

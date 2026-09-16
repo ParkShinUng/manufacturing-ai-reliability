@@ -1,5 +1,73 @@
 # Documentation Changelog
 
+## ADR-0020 - OT protocol libraries, and the contract defects choosing them exposed (2026-09-16)
+
+Phase 2's prerequisite. `AGENTS.md` forbids adding a dependency without documented rationale, and
+`protocol choice` and `major dependency` are both on the mandatory Codex participation list, so the
+libraries could not be chosen in a commit message.
+
+### Chosen
+
+`OPCFoundation.NetStandard.Opc.Ua.Server` / `.Client` / `.Configuration` 1.5.378.176 and
+`NModbus` 3.0.83, all MIT, pinned in `TOOLCHAIN.md`. The split packages are named deliberately - the
+`OPCFoundation.NetStandard.Opc.Ua` meta package has no framework assets and pulls in GDS and
+complex-type assemblies neither service needs.
+
+Two findings decided this and are worth recording:
+
+- **The OPC UA licence had to be checked, not assumed.** This stack is widely documented as dual
+  licensed - RCL for OPC Foundation corporate members, GPLv2 for everyone else - which would have
+  disqualified it for a public repository. The current `LICENSE.txt` is a single MIT licence with no
+  membership condition. Secondary documentation still describes the old model in places.
+- **`FluentModbus` is disqualified by one requirement.** `EQUIPMENT_SIMULATOR.md` 11 requires an
+  out-of-range setpoint to be rejected with Modbus exception `0x03`, never clamped. FluentModbus
+  exposes the server as a register buffer; its `RequestValidator` sees unit id, function code,
+  address and quantity but **not the value**, and `RegistersChanged` fires after the write. So a bad
+  value can be detected and corrected but not refused - which is the silent clamp the spec forbids.
+  `NModbus` passes values to `IPointSource.WritePoints` and carries an arbitrary exception code back
+  through `InvalidModbusRequestException`.
+
+Hand-rolling Modbus TCP was considered seriously and rejected. The rationale originally cited AC-021;
+Codex pointed out that AC-021 catches scaling and word-order disagreement, not framing, transaction
+ids or concurrency, so the reasoning was corrected. The asymmetry with this repository's hand-rolled
+PRNG is stated explicitly: the PRNG exists because no dependency could provide bit-identical output
+per seed (NFR-010) and it is 40 pure lines; a Modbus server is stateful, concurrent and socket-facing.
+
+### Contract defects the challenge exposed
+
+Both were in `OT_PROTOCOL_MAPPING.md`, not in the ADR. A library cannot be chosen against a contract
+that is not implementable.
+
+- **`FC06` cannot write the setpoint.** 2.4 said "function code 6/16", but
+  `operationRateSetpointPct` is a two-register int32 and `FC06` writes one register. It could only
+  ever write half the value - not a malformed request to be rejected, but a *different rate* the
+  equipment would act on. Corrected to `FC16` only, quantity exactly 2, starting at the base, with a
+  response table for every other case.
+- **Modbus TCP cannot enforce a read-only gateway.** The contract said the gateway's session is
+  provisioned without write permission so the property is server-enforced. Modbus TCP has no
+  authentication, no session identity and no per-client permission model - there is nothing to
+  provision. Raised as OD-003 and resolved by the product owner as **option A: two listeners**,
+  read-only `5020` for the gateway, write-capable `5021` for the Control Service.
+
+### The part that took longest
+
+One wrong sentence - "a misrouted gateway still cannot write" - was circular, and it had been written
+into **nine** documents. It only holds if the gateway is pointed at `5020`. Removing it took several
+rounds because each pass fixed only the instances that had been named rather than sweeping for the
+claim. What the listener split actually buys is narrower and is now stated the same way everywhere:
+with the correct port, no gateway defect or compromise can produce a write, because the connection
+carries no write function codes; a gateway misconfigured to `5021` can write, and only network policy
+stops it. The failure mode moves from "any gateway bug can write" to "only a wrong port can write".
+
+`SAFETY_SUPERVISOR.md` had the same wrong model in a different service - "no equipment credentials,
+enforced by provisioning" enforces nothing when the protocol has no credentials - and now states what
+holds for both protocols: no OT client code and no route into the OT zone.
+
+One Codex finding was **rejected with evidence**: that the word "session" throughout the state
+machine implies Modbus is session-based. It describes connectivity, which both protocols have, and
+`session_timeout` is a normative constant wired through the transition table, the diagram, the C#
+implementation and its tests. Addressed by defining the term at its source instead.
+
 ## Phase 1 verification - dual-agent review and the two decisions it produced (2026-09-15)
 
 Three Codex rounds against commit `8d24190`. Codex rejected twice, then accepted.

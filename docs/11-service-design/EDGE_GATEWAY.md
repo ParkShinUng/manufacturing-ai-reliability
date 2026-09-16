@@ -16,8 +16,11 @@ timestamp assignment and anomaly flagging; `sequence` gap detection; bounded buf
 Kafka production; **gateway-observed equipment state** to `factory.equipment-states.v1`.
 
 ## 3. Non-responsibilities
-**Never writes to equipment** — read-only OT sessions, server-enforced (FR-035). No AI. No control
-decisions. Does not own equipment ground truth, only its observation.
+**Never writes to equipment** — server-enforced, not trusted (FR-035). On OPC UA the session is
+provisioned without write permission; on Modbus the gateway connects to the **read-only listener
+`5020`**, which refuses every write function code with exception `0x01`, because Modbus TCP has no
+identity to withhold permission from (OD-003). No AI. No control decisions. Does not own equipment
+ground truth, only its observation.
 
 ## 4. Dependencies
 | Dependency | Class | Failure behaviour |
@@ -93,8 +96,21 @@ Endpoints, `equipmentIds`, `pollIntervalMs` (100), `bufferCapacity` (6 000), `fr
 `outlierSigma` (6), `clockSkewBudgetMs` (250), reconnect backoff, Kafka settings.
 
 ## 16. Security
-OT sessions **read-only by provisioning**. Production-like OPC UA: `Basic256Sha256` /
-`SignAndEncrypt`. No equipment write credentials exist in this service's environment.
+Read-only toward equipment, by two different mechanisms (OD-003):
+
+| Protocol | Mechanism |
+|---|---|
+| OPC UA | session provisioned **without** write permission. Production-like: `Basic256Sha256` / `SignAndEncrypt` |
+| Modbus TCP | connects **only** to the read-only listener `5020`. There are no Modbus credentials to provision, so the guarantee is structural: that listener has no write code path |
+
+No equipment write credentials exist in this service's environment. The gateway must be configured
+with `5020` and never `5021`.
+
+What the listener split buys is narrower than "the gateway can never write", and the difference
+matters: **given the correct port, no defect or compromise in this service can produce an equipment
+write**, because the connection it holds carries no write function codes at all. It does **not**
+survive a misconfiguration to `5021` — a gateway pointed there can write, and only network policy
+stops it. That is why the port is a reviewed configuration value rather than a default.
 
 ## 17. Observability
 `protocol_connected{protocol}`, `telemetry_events_total`, `telemetry_publish_errors_total`,

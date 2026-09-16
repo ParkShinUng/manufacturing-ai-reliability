@@ -98,7 +98,9 @@ the Supervisor re-acquires a lease and re-derives rather than resending.
 proves L3 independence.
 
 ### FAIL-OT-001 — protocol disconnect/restore → AC-002
-**Trigger:** stop the OPC UA / Modbus endpoint for 30 s, then restore.
+**Trigger:** stop the endpoint the **gateway** reads — OPC UA, or the Modbus read-only listener
+`5020` — for 30 s, then restore. The Modbus write listener `5021` is Control Service-facing and is
+not part of gateway reconnect (OD-003); its loss is a control-path failure, not a telemetry one.
 **Assert:** state → `OFFLINE` within 3 s · `protocol_connected == 0` · reconnect within 10 s
 **with no process restart** · `reconnect_total` increases · telemetry resumes · `SEQUENCE_GAP`
 raised for the gap.

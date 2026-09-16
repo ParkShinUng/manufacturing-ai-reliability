@@ -28,7 +28,7 @@ Type: C = counter, G = gauge, H = histogram.
 
 | Metric | T | Unit | Labels | Purpose |
 |---|---|---|---|---|
-| `protocol_connected` | G | bool | `protocol` | OT session health |
+| `protocol_connected` | G | bool | `protocol` | OT connection health (an OPC UA session or a Modbus TCP connection — Modbus has no session) |
 | `telemetry_events_total` | C | events | `protocol` | ingest volume |
 | `telemetry_publish_errors_total` | C | errors | `reason` | producer health |
 | `telemetry_dropped_total` | C | events | — | **bounded loss (D-02)** |

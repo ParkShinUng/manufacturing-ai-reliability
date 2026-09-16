@@ -162,9 +162,15 @@ Local config: `predictionTtlMs` (10 000), `telemetryFreshnessMs` (2 000), `heart
 
 ## 16. Security
 
-mTLS client identity to Control Service. **No equipment credentials** (`SECURITY_BOUNDARIES.md`) —
-enforced by provisioning, not merely by convention: the Supervisor's environment contains no OT
-endpoint credentials at all.
+mTLS client identity to Control Service. **No equipment access at all** (`SECURITY_BOUNDARIES.md`),
+and this is structural rather than conventional — but note that "no credentials" only says something
+on OPC UA. Modbus TCP has no credentials to withhold, so absence of credentials would be trivially
+true and would enforce nothing.
+
+What actually holds for both protocols: the Supervisor contains **no OT client code**, so there is
+nothing in it that could open an OPC UA session or a Modbus connection, and it has no network route
+into the OT zone. On OPC UA it additionally holds no endpoint credentials. `AC-039` asserts the
+absence of the write path, not merely the absence of a credential.
 
 ## 17. Observability
 

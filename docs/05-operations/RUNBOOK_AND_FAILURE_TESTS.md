@@ -9,7 +9,8 @@
 
 ## Demo failure tests
 1. `FAIL-AI-001`: terminate prediction service; verify AC-004.
-2. `FAIL-OT-001`: stop OPC UA/Modbus endpoint then restore; verify AC-002.
+2. `FAIL-OT-001`: stop the gateway-facing endpoint — OPC UA or the Modbus read listener `5020` —
+   then restore; verify AC-002.
 3. `FAIL-DATA-001`: inject stale telemetry; verify rejection reason.
 4. `FAIL-OOD-001`: inject OOD profile; verify AC-005.
 5. `FAIL-CMD-001`: duplicate command delivery; verify AC-007.

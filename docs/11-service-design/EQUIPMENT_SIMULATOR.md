@@ -24,7 +24,8 @@ derivation — it reports raw protocol quality only.
 | Kafka (fault events only) | Non-control-critical | buffer; never blocks the model loop |
 
 ## 5. Inputs / outputs
-**In:** setpoint write (OPC UA node / Modbus holding register); fault-injection admin API (demo only).
+**In:** setpoint write (OPC UA node / Modbus holding register on the **write** listener only);
+fault-injection admin API (demo only).
 **Out:** OPC UA + Modbus telemetry; `factory.faults.v1`.
 
 ## 6. Contracts
@@ -94,8 +95,20 @@ hide a real startup race.
 
 ## 16. Security
 Fault-injection and admin endpoints exist **only** when `demoProfile=true` and are absent from the
-build otherwise. Only the setpoint node/register is writable. The gateway's OT session is provisioned
-**without** write permission, so read-only gateway behaviour is server-enforced rather than trusted.
+build otherwise. Only the setpoint node/register is writable.
+
+Read-only gateway behaviour is **server-enforced rather than trusted**, but the mechanism differs by
+protocol because Modbus TCP has no credentials to withhold (OD-003):
+
+| Protocol | Mechanism |
+|---|---|
+| OPC UA | the gateway's session is provisioned **without** write permission on `OperationRateSetpointPct` |
+| Modbus TCP | **two listeners** — the gateway uses the read-only port `5020`, which refuses every write function code with exception `0x01`; the Control Service uses `5021` |
+
+The Modbus listener separation makes the property true in code rather than in a firewall rule, for
+a bounded scope: `5020` has no write code path, so a gateway **connected to `5020`** cannot write
+whatever defect or compromise it suffers, even with a wrong network policy. It does not protect
+against a gateway misconfigured to `5021`; that case is network policy's (OD-003).
 
 ## 17. Observability
 `simulator_loop_overruns_total`, `equipment_state{state}`, `fault_injections_total{profile}`,

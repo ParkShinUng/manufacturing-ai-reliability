@@ -74,6 +74,8 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   acknowledgement with a recorded `operatorId` (M7).
 - **AC-039 → FR-030/035** — Static analysis plus a runtime check confirm that no AI service holds
   equipment credentials and no component other than the Control Service performs an equipment write.
+  For Modbus this is proven directly: a write function code sent to the gateway's read-only listener
+  is refused with exception `0x01` (OD-003).
 - **AC-040 → NFR-014** — Invalid safety configuration causes **startup abort**, not a start with
   defaults.
 

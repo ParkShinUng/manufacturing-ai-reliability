@@ -48,8 +48,13 @@ Simulator-side **protocol server endpoints** per `OT_PROTOCOL_MAPPING.md` · gat
 normalisation · closed quality vocabulary and derived `quality.overall` · reconnect without process
 restart · bounded buffering with drop-oldest.
 **Proof:** **AC-001**, AC-002, AC-021, AC-022, AC-023.
-**Prerequisite:** an ADR selecting the OPC UA and Modbus libraries, challenged by Codex (protocol
-choice is on the mandatory participation list).
+**Prerequisite: MET 2026-09-16.** [`ADR-0020`](../07-adr/ADR-0020-ot-protocol-libraries.md) selects
+the OPC UA and Modbus libraries and is **Accepted** after a Codex challenge (protocol choice and
+major dependency are both on the mandatory participation list). `OD-003`, which the challenge
+surfaced, is resolved.
+
+**Phase 2 itself is still unrequested.** The prerequisite being met removes a blocker; it does not
+start the phase.
 **Depends on:** Phase 1 (nothing to read otherwise).
 
 ## Phase 3 — Kafka Event Backbone

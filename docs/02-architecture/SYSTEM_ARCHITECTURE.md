@@ -28,7 +28,8 @@ Design: [`11-service-design/EQUIPMENT_SIMULATOR.md`](../11-service-design/EQUIPM
 C#/.NET Worker on Linux. Owns OPC UA/Modbus connectivity, normalisation, timestamps, **canonical
 quality flags and derived `quality.overall`** (ADR-0018), reconnect, bounded local buffering, and
 Kafka production. Publishes gateway-observed state to `factory.equipment-states.v1`.
-**Read-only toward equipment, enforced by server-side provisioning.**
+**Read-only toward equipment, enforced by the server — by session provisioning on OPC UA, and by
+connecting only to the read-only Modbus listener `5020`, which has no write code path (OD-003).**
 Design: [`EDGE_GATEWAY.md`](../11-service-design/EDGE_GATEWAY.md)
 
 ### 3. `prediction-service`

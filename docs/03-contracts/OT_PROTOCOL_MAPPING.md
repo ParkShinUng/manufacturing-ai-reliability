@@ -96,7 +96,8 @@ makes freshness gates lie (GAP-060).
 
 | Item | Value |
 |---|---|
-| Port | `5020` (non-privileged; `502` requires root and buys nothing in a container) |
+| **Read-only port** | `5020` — telemetry. **Every write function code is refused with exception `0x01` (Illegal Function).** This is the port the Edge Gateway uses. |
+| **Write port** | `5021` — the single holding-register write (§2.4), plus the same read access. This is the port the Control Service uses. |
 | Unit ID | `equipmentIndex + 1` (1–247) |
 | Byte order | **big-endian** (Modbus network order) |
 | 32-bit word order | **high word first** (big-endian word order) |
@@ -104,6 +105,28 @@ makes freshness gates lie (GAP-060).
 
 Word order is the classic Modbus interoperability trap and is stated explicitly because roughly half
 of real devices do the opposite.
+
+#### Why two ports (OD-003, resolved 2026-09-16)
+
+Modbus TCP has **no authentication, no session identity, and no per-client permission model**. A
+connection carries a unit id, a function code and an address; there is no principal. So the
+OPC UA mechanism — provision the gateway's session without write permission — has no Modbus
+equivalent, and until this was resolved the contract asserted an enforcement that could not exist.
+
+Two listeners restore the property **inside the software**, with a precisely bounded scope. On
+`5020` there is no code path that writes, so **a gateway connected to `5020` cannot write no matter
+what defect or compromise it suffers** — true by construction rather than by trust, and provable by
+an acceptance test rather than by inspecting a firewall.
+
+It does **not** make the gateway incapable of writing in general. A gateway misconfigured to `5021`
+can write, and only network policy prevents that. What the split changes is the failure mode: from
+"any gateway bug can write" to "only a wrong port can write". A port is a reviewable configuration
+value; a bug is not. Achieving the same thing with a single listener would require the network layer
+to filter by Modbus **function code**, which an IP-and-port policy cannot do without deep packet
+inspection.
+
+Both ports serve **identical telemetry**; they differ only in whether write function codes exist.
+Non-privileged ports are used because `502` requires root and buys nothing in a container.
 
 ### 2.2 Why scaled integers, not IEEE-754 floats
 
@@ -132,7 +155,7 @@ Base address per equipment: `40 × equipmentIndex`.
 | +20 | 2 | `sourceEpochMs` | uint32 | — | **milliseconds** since equipment start (occupies +20 and +21). Wraps at 2^32 ms (~49.7 days); a wrap is indistinguishable from a restart, so the simulator MUST also reset `sequence` on wrap so the two signals stay consistent. |
 | +22 | 1 | `statusBitmap` | uint16 | — | bit 0 = fault injection active (demo profile only); bits 1–15 reserved, must be 0. Distinct from `qualityBitmap` (§2.5). |
 
-### 2.4 Holding register (function code 6/16) — the single write
+### 2.4 Holding register (function code **16 only**) — the single write
 
 Base address per equipment: **`4 × equipmentIndex`** in the holding-register space. Without a
 per-equipment base every machine would alias the same write address.
@@ -146,6 +169,31 @@ Again: **one** writable location per equipment. A write outside 0–1000 is reje
 with Modbus exception `0x03` (Illegal Data Value) and is **not** clamped — silently clamping an
 out-of-range write would hide a control-path defect that the Control Service bounds check is
 supposed to catch first.
+
+**This section describes the write-capable listener `5021` only.** On the read-only listener `5020`
+every write function code is refused with exception `0x01` (Illegal Function) before addressing is
+considered, so `5020` never returns any of the codes below — one malformed write cannot have two
+different answers depending on which port it arrived on.
+
+**Function code 16 only, quantity exactly 2, starting exactly at the base.** *Corrected 2026-09-16;
+this section previously said "function code 6/16", which is not implementable.* `FC06` writes a
+single 16-bit register, and `operationRateSetpointPct` is a **two-register int32**, so `FC06` cannot
+express this field at all — it could only ever write half of it. A half-written setpoint is not a
+malformed request that gets rejected later; it is a **different, arbitrary rate** that the equipment
+would act on, which is the failure mode this whole address map exists to prevent.
+
+| Request | Response |
+|---|---|
+| `FC16`, start = base, quantity = 2, value 0–1000 | accepted |
+| `FC16`, start = base, quantity = 2, value outside 0–1000 | exception `0x03` Illegal Data Value, **neither register mutated** |
+| `FC16` with quantity ≠ 2, or not starting at the base | exception `0x02` Illegal Data Address |
+| `FC06`, or any write function code other than `FC16`, against holding-register space | exception `0x02` Illegal Data Address |
+| any write function code to the input-register space (§2.3) | exception `0x02` Illegal Data Address |
+| any write function code on the read-only listener `5020` | exception `0x01` Illegal Function |
+
+The rejection must leave **both** registers unchanged. A library whose server writes into a buffer
+before the value is visible to the application cannot satisfy this row, which is what decided
+ADR-0020.
 
 ### 2.5 Quality bitmap (register +15)
 
@@ -234,7 +282,20 @@ For every telemetry event the gateway must:
 9. never originate an equipment write. The gateway is **read-only** toward equipment; the writable
    setpoint node/register is addressed exclusively by the Control Service.
 
-Obligation 9 is the protocol-level statement of FR-035, and it is worth noting that the gateway and
-the Control Service therefore hold *different* OT credentials (`SECURITY_BOUNDARIES.md`): the
-gateway's session must be provisioned without write permission, so that obligation 9 is enforced by
-the server rather than trusted of the client.
+Obligation 9 is the protocol-level statement of FR-035. **How it is enforced differs by protocol,
+and this section previously claimed more than Modbus TCP can deliver** (corrected 2026-09-16, raised
+by the ADR-0020 challenge).
+
+**OPC UA — enforced by the server.** The gateway and the Control Service hold *different* OT
+credentials (`SECURITY_BOUNDARIES.md`), and the gateway's session is provisioned without write
+permission on `OperationRateSetpointPct`. Obligation 9 is enforced rather than trusted.
+
+**Modbus TCP — enforced by listener separation, because credentials do not exist.** Modbus TCP has
+**no authentication, no session identity, and no per-client permission model**. There is no
+credential to provision and nothing for the server to check, so the previous sentence — which
+asserted a single mechanism for both protocols — was not implementable.
+
+Resolved as **OD-003 option A**: the simulator exposes two listeners (§2.1). The gateway connects to
+the **read-only** port `5020`, which refuses every write function code with exception `0x01`; the
+Control Service connects to `5021`. Obligation 9 therefore holds on the Modbus side by construction,
+not by trusting the gateway, and `AC-039` can prove it.

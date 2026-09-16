@@ -171,6 +171,13 @@ carries an `observedBy` field so a consumer can never mistake it for ground trut
 
 ### 3.1 States
 
+> **"Session" here means a protocol connection, and nothing about authorization.** OPC UA has
+> sessions in the protocol sense; **Modbus TCP does not** — it has a TCP connection carrying no
+> identity. The states below and `session_timeout` in `T11` describe *connectivity*, which both
+> protocols have. Who may write is a separate matter entirely and is answered per protocol in
+> `OT_PROTOCOL_MAPPING.md` §3 and `SECURITY_BOUNDARIES.md` (OD-003). Conflating the two is the
+> mistake that produced OD-003 in the first place.
+
 | State | Meaning | Rate setpoint accepted? | AI eligible? |
 |---|---|---|---|
 | `OFFLINE` | No protocol session. | No | No |
