@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\EdgeGateway\Mair.EdgeGateway.csproj" />
     <ProjectReference Include="..\EquipmentSimulator\Mair.EquipmentSimulator.csproj" />
     <ProjectReference Include="..\EquipmentSimulator.Protocols\Mair.EquipmentSimulator.Protocols.csproj" />
   </ItemGroup>

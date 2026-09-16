@@ -32,8 +32,28 @@ The second row is the architectural crux: blocking the poll loop on a Kafka outa
 analytics backbone a dependency of the OT path, which MASTER_SPEC principle 4 forbids.
 
 ## 5. Inputs / outputs
-**In:** OPC UA subscriptions, Modbus polls. **Out:** `factory.telemetry.v1`,
-`factory.equipment-states.v1`, metrics.
+**In:** OPC UA subscriptions, Modbus polls. **Out:** canonical telemetry and equipment-state records
+across the **egress port** (§5.1), and metrics. In the completed system the egress port is bound to
+`factory.telemetry.v1` and `factory.equipment-states.v1`.
+
+### 5.1 The egress port (Phase 2 / Phase 3 boundary)
+
+The gateway emits canonical records through a narrow egress interface rather than calling a Kafka
+producer inline. **This is not a new abstraction introduced for testing** — it is the seam §4 and
+§13 already require: Kafka is classified `Non-control-critical` and "never blocks the OT poll loop",
+and §13 says blocking is forbidden. A bounded buffer between the poll loop and the transport is
+what makes that true, and a buffer has two ends. Naming the far end is implementing the design.
+
+| Phase | What is proven |
+|---|---|
+| **2** | the gateway **emits** canonical records conforming to `telemetry.schema.json`, with bounded buffering and drop-oldest, against a recording egress sink. AC-001, AC-021, AC-022, AC-023 |
+| **3** | the egress port is **bound to Kafka** under the topology contract — topic creation, pinned partitions, retention, idempotent producer, DLQ and replay. FR-010, AC-026, AC-027 |
+
+Split this way because **AC-001 maps to FR-001/FR-006, not FR-010**. Kafka publication is FR-010 and
+is Phase 3's subject. Reading the schema's topic binding as a Phase 2 requirement conflates the
+contract's *data shape* with its *transport realisation*, and would have dragged partition counts,
+retention and producer settings into Phase 2 where an implementer would have chosen them instead of
+`KAFKA_TOPOLOGY_AND_SEMANTICS.md`.
 
 ## 6. Contracts
 `contracts/jsonschema/v1/telemetry.schema.json`, `equipment-state.schema.json`;
@@ -80,7 +100,10 @@ gates a fabricated reading.
 
 ## 12. Timeout / retry / idempotency / ordering
 OPC UA: publish 100 ms, keep-alive 5. Modbus: poll 100 ms, response timeout 250 ms, **one block read
-of 22 registers** per equipment so a poll cannot straddle two model steps. Producer:
+of 23 registers** (`+0`…`+22`) per equipment so a poll cannot straddle two model steps.
+*Corrected 2026-09-16: this said 22, left over from before `CODEX-R3-005` moved `statusBitmap` to
+`+22` to stop it aliasing the high word of the 32-bit `sourceEpochMs`. A 22-register read would have
+silently never returned `statusBitmap`. `OT_PROTOCOL_MAPPING.md` §2.3 is authoritative (DEC-007).* Producer:
 `enable.idempotence=true`, `acks=all`, in-flight ≤ 5, key = `equipmentId`.
 
 ## 13. Backpressure
@@ -113,9 +136,16 @@ survive a misconfiguration to `5021` — a gateway pointed there can write, and 
 stops it. That is why the port is a reviewed configuration value rather than a default.
 
 ## 17. Observability
-`protocol_connected{protocol}`, `telemetry_events_total`, `telemetry_publish_errors_total`,
-`telemetry_dropped_total`, `local_buffer_depth`, `reconnect_total`,
-`telemetry_sequence_gaps_total`, `quality_flags_total{flag}`, `clock_skew_seconds`.
+Label sets are the ones in `OBSERVABILITY_AND_SLO.md`, which is authoritative; they are repeated
+here only so this design is readable on its own.
+
+`protocol_connected{protocol}`, `telemetry_events_total{protocol}`,
+`telemetry_publish_errors_total{reason}`, `telemetry_dropped_total`, `local_buffer_depth`,
+`reconnect_total{protocol}`, `telemetry_sequence_gaps_total`, `quality_flags_total{flag,channel}`,
+`clock_skew_seconds`.
+
+Every label is a closed enum — `quality_flags_total` is bounded at 12 flags × 8 channels — and
+`equipmentId` is never a label (`CODING_STANDARDS.md`).
 
 ## 18. Performance targets (TARGET — unmeasured)
 20 equipment × 10 Hz = 200 ev/s sustained; 250 equipment = 2 500 ev/s;

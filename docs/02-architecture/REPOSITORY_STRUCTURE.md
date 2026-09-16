@@ -24,7 +24,8 @@ manufacturing-ai-reliability/
 │  ├─ dotnet/
 │  │  ├─ Mair.sln
 │  │  ├─ BuildingBlocks/
-│  │  ├─ EquipmentSimulator/
+│  │  ├─ EquipmentSimulator/          # L3 domain core - MUST stay dependency-free (see below)
+│  │  ├─ EquipmentSimulator.Protocols/ # OPC UA + Modbus servers; where the OT libraries live
 │  │  ├─ EquipmentSimulator.Tests/    # unit tests live alongside source (TEST_SPECIFICATIONS.md 1)
 │  │  ├─ EdgeGateway/
 │  │  ├─ SafetySupervisor/
@@ -73,6 +74,24 @@ manufacturing-ai-reliability/
 validated instance, enforced by `tests/contract/validate_examples.mjs`.
 
 `contracts/` contains machine-readable source-of-truth schemas. Language DTO/models are generated from or validated against these contracts. Hand-edited DTO divergence is prohibited.
+
+## Why the simulator is two projects (added 2026-09-16, Phase 2)
+
+`EquipmentSimulator` holds the **L3 domain core** — physics, state machine, protective trips, the
+dead-man revert. It references **nothing outside the framework**, and `AC-020` asserts that as a
+test: "with the entire platform stopped" is only a real claim if no component's absence can disable
+the protective trip.
+
+Adding the OPC UA and Modbus libraries to that project would have destroyed the property. So
+protocol hosting lives in `EquipmentSimulator.Protocols`, which depends on the core; the core never
+depends on it. The dependency arrow points **inward**, toward the layer that must survive.
+
+This was found in Phase 2 when the first `NModbus` package reference went onto the wrong project.
+The AC-020 test did not fail immediately — `GetReferencedAssemblies()` reports only assemblies the
+compiler actually emitted a reference to, so a package sitting unused in the graph is invisible to
+it. It would have failed on the first line of protocol code. Worth knowing: that test proves the
+property only for code that exists, which is why the **project boundary** carries the guarantee and
+the test confirms it.
 
 ## Shared code rules
 - `.NET BuildingBlocks` may contain only cross-cutting technical primitives (correlation, result types, observability helpers), not domain business rules.

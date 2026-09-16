@@ -73,7 +73,8 @@ All conditions are satisfied (see below). Phase 1 is authorized; implementation 
 | v0.3 specification | **Approved** |
 | The three architecture decisions | **Approved**; DEC-001/004/009 and ADR-0011/0014/0019 human-review sections closed |
 | Conditions | **All satisfied** |
-| **Phase 1** | **Authorized** |
+| **Phase 1** | **Complete** |
+| **Phase 2** | **Requested 2026-09-16, in progress** |
 | **Implementation** | **Phase 1 IN PROGRESS** — started 2026-09-15 at the product owner's request |
 
 ### Authorized is not the same as started
@@ -88,7 +89,11 @@ The first Phase 1 work, when requested, is
 **It was requested on 2026-09-15** and the domain core is implemented, proving AC-018, AC-019,
 AC-020 and PROP-03. AC-001 and AC-002 were reassigned to Phase 2 during the Definition-of-Ready
 check, because both require the Edge Gateway and neither can be evaluated by the simulator alone.
-Phase 2 remains unrequested.
+
+**Phase 2 was requested by the product owner on 2026-09-16** and is in progress. Its prerequisite,
+an ADR selecting the OT protocol libraries challenged by Codex, was met the same day (`ADR-0020`).
+Phase 3 and everything after it remain unrequested, and this paragraph applies to each of them
+individually.
 
 ### What remains true regardless of this approval
 

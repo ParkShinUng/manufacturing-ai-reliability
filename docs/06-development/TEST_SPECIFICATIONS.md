@@ -156,11 +156,71 @@ resume from committed offsets.
 **Assert:** `clock_skew_seconds` exceeds 0.25 and alerts · freshness gates apply the skew budget on
 the permissive side · **no stale data is accepted as fresh** (the unacceptable consequence in F31).
 
+## 4a. Phase 2 gateway test specifications
+
+Added 2026-09-16. The Definition-of-Ready check at Phase 2 initialisation found that four of the
+five Phase 2 acceptance criteria had **no** specification here, while §7 claimed every AC was
+mapped. §7 was aspirational; these close the gap.
+
+All four are proven against the **egress port** (`EDGE_GATEWAY.md` §5.1), not against Kafka.
+Kafka binding is FR-010 and is proven in Phase 3.
+
+### OT-001 — sustained canonical emission → AC-001
+**Setup:** 20 simulated equipment, mixed fault profiles, both protocols in use, gateway connected,
+recording egress sink.
+**Trigger:** run for 30 minutes at the 100 ms cadence.
+**Expected:** continuous canonical telemetry; no unhandled exception in simulator or gateway.
+**Assert:** every emitted record validates against `telemetry.schema.json` · all seven measurement
+keys present on every record (nullable, but present) · `equipmentId`, `eventTimeUtc`,
+`ingestTimeUtc`, `occurredAtUtc`, `sequence`, `schemaVersion`, `producer`, `quality`,
+`correlationId` present on every record (FR-006) · records seen for all 20 equipment throughout ·
+**zero unhandled exceptions** · `local_buffer_depth` bounded · `telemetry_dropped_total == 0` with
+a healthy sink.
+
+### OT-002 — cross-protocol agreement → AC-021
+**Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
+**Trigger:** collect paired samples over 5 minutes across the full rate range, including a slew.
+**Expected:** both paths normalise to the same engineering values.
+**Assert:** for every paired sample and every channel, the two protocols agree **within the
+channel's documented resolution** (`EQUIPMENT_MODEL_AND_STATE.md` §1.2: 0.1 rpm, 0.1 N·m, 0.01 A,
+0.1 V, 0.1 °C, 0.01 mm/s, 0.1 %) · the 32-bit fields decode **high word first** · `sourceEpochMs`
+read across `+20/+21` matches the OPC UA value · `statusBitmap` at `+22` is read and matches.
+
+This is the test that catches scaling and word-order errors, which is why it compares engineering
+values rather than raw registers: a word-order mistake in a scaled integer produces a plausible
+wrong magnitude, and only the second protocol disagrees with it.
+
+### OT-003 — dead sensor is null, never substituted → AC-022
+**Setup:** one equipment per sensor fault profile (`SENSOR_DROPOUT`, `SENSOR_FREEZE`),
+on each protocol.
+**Trigger:** run until each fault is active for at least 60 s.
+**Expected:** the affected channel is emitted as `null` with a quality flag.
+**Assert:** the channel is `null` — **never 0, never last-known, never interpolated** (ADR-0018,
+DEC-008) · the key is still present · an accompanying flag from the closed vocabulary names that
+channel · `quality.overall` equals the derivation rule for the resulting flag set · the record still
+validates against `telemetry.schema.json` · `quality_flags_total{flag,channel}` increases.
+
+**Negative case, required:** a run with **no** sensor fault emits **no** flags and
+`quality.overall == GOOD`. Without it an implementation that flagged everything would pass.
+
+### OT-004 — no gap goes undetected → AC-023
+**Setup:** 20 equipment, healthy, gateway connected.
+**Trigger:** drop telemetry samples at the source so `sequence` skips — at least one single-sample
+gap, one multi-sample gap, and one gap spanning a reconnect.
+**Expected:** every discontinuity is detected and reported.
+**Assert:** `SEQUENCE_GAP` raised on the `__event__` channel for each gap ·
+`telemetry_sequence_gaps_total` increases by exactly the number of gaps · **no gap is missed** · an
+equipment restart, which resets `sequence` **and** `sourceEpochMs` together, is **not** reported as
+a gap (§14) · a `sourceEpochMs` wrap is likewise not a gap.
+
+The restart and wrap cases are the point: a detector that flags every `sequence` decrease would
+pass the first three assertions and cry wolf on every restart.
+
 ## 5. Load test specifications
 
 | ID | Scenario | Asserts |
 |---|---|---|
-| LOAD-001 | 20 equipment @ 100 ms for 30 min | T-01 demo, L-01, no dropped telemetry, no gaps |
+| LOAD-001 | 20 equipment @ 100 ms for 30 min | T-01 demo, L-01, no dropped telemetry, no gaps. Shares its harness with `OT-001` (AC-001) |
 | LOAD-002 | 250 equipment @ 100 ms for 15 min | T-01 load, buffer depth bounded, lag bounded |
 | LOAD-003 | Sustained command rate | T-04, L-06 |
 | LOAD-004 | End-to-end latency under load | **L-07 P95 ≤ 1 200 ms** |
@@ -199,3 +259,8 @@ satisfy PROP-03 trivially.
 Every AC in `ACCEPTANCE_CRITERIA.md` maps to at least one specification here. CI fails if an AC has
 no mapped test, and the mapping is asserted by a test rather than maintained by hand — an unmapped
 AC is a build failure, not a documentation gap.
+
+**That assertion test does not exist yet.** Until it does, this section states an intention rather
+than an enforced property, and it has already been wrong once: at Phase 2 initialisation four of the
+five Phase 2 ACs had no specification here while this paragraph claimed otherwise (§4a). Building
+the mapping check is Phase 2 work, so that the claim stops depending on whoever last read the file.

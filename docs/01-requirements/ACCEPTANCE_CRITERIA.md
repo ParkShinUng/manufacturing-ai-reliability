@@ -10,9 +10,12 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
 ## Equipment, simulation, OT
 
 - **AC-001 → FR-001/006** *(verified in **Phase 2**)* — **20** simulated machines (not "10+")
-  publish canonical telemetry containing all mandatory metadata for 30 minutes with no unhandled
+  **emit** canonical telemetry containing all mandatory metadata for 30 minutes with no unhandled
   simulator or gateway exception. Canonical telemetry is produced by the Edge Gateway, so this
   criterion cannot be evaluated until Phase 2 exists.
+  *Wording corrected 2026-09-16: this said "publish", which reads as Kafka publication. AC-001 maps
+  to **FR-001/FR-006** — emulating 20 instances, and every event carrying its mandatory metadata.
+  Kafka publication is **FR-010**, proven in Phase 3 (`EDGE_GATEWAY.md` §5.1).*
 - **AC-002 → FR-004** — Disconnect a protocol endpoint, restore it, and verify gateway reconnect and
   resumed event flow **without a gateway process restart**, within 10 s (R-01).
 - **AC-018 → FR-002** — Each of the **11** fault profiles produces its documented signature; with a

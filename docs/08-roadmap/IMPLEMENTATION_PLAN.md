@@ -53,13 +53,23 @@ the OPC UA and Modbus libraries and is **Accepted** after a Codex challenge (pro
 major dependency are both on the mandatory participation list). `OD-003`, which the challenge
 surfaced, is resolved.
 
-**Phase 2 itself is still unrequested.** The prerequisite being met removes a blocker; it does not
-start the phase.
+**Requested and started 2026-09-16.**
 **Depends on:** Phase 1 (nothing to read otherwise).
+
+> **Phase 2 / Phase 3 boundary, settled at Phase 2 initialisation.** Phase 2 proves the gateway
+> **emits** canonical telemetry across its egress port (`EDGE_GATEWAY.md` §5.1); Phase 3 proves that
+> port is **bound to Kafka** under the topology contract. `AC-001` maps to `FR-001/FR-006`, not
+> `FR-010`, so it does not require a broker — the schema's topic binding describes the completed
+> system, not a Phase 2 dependency. Building a "minimal" Phase 2 broker would have meant choosing
+> partition counts, retention, auto-creation policy and producer settings in an implementation,
+> when `KAFKA_TOPOLOGY_AND_SEMANTICS.md` owns them and forbids auto-topic-creation precisely because
+> a wrong partition count breaks ordering.
 
 ## Phase 3 — Kafka Event Backbone
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset
-commit · DLQ and redrive · lag and record-age metrics · replay on projector groups only.
+commit · DLQ and redrive · lag and record-age metrics · replay on projector groups only ·
+**binding the gateway's egress port to `factory.telemetry.v1` and `factory.equipment-states.v1`**
+(FR-010).
 **Proof:** AC-003, AC-026, AC-027.
 
 ## Phase 4 — Operational Data + Operations API
