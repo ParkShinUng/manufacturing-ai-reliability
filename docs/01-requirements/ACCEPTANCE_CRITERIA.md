@@ -31,7 +31,11 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   sensor is emitted as `null` with a quality flag, and **no synthetic value is ever substituted**
   (D-05).
 - **AC-023 → FR-006** — A dropped telemetry sample produces `SEQUENCE_GAP` and increments
-  `telemetry_sequence_gaps_total`; **no gap goes undetected** (D-03).
+  `telemetry_sequence_gaps_total`; **no dropped sample within a continuous source epoch goes
+  undetected** (D-03). *Clarified 2026-09-17 by OD-004:* an equipment restart or a 2^32 ms epoch
+  wrap — where `sequence` and `sourceEpochMs` reset **together** — is a new epoch, not a gap, and is
+  not reported as one. Either signal resetting **alone** is a gap. Both protocols must agree, which
+  is why OPC UA now carries `SourceEpochMs`.
 
 ## Event platform
 

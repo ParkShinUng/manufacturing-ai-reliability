@@ -111,8 +111,30 @@ Capacity 6 000 (~30 s at demo scale); drop oldest; **blocking forbidden**. Buffe
 freshness horizon buys nothing, since stale telemetry is rejected by the gates anyway.
 
 ## 14. Restart recovery
-Sequence tracking restarts; first sample after restart raises `SEQUENCE_GAP` unless `sourceEpochMs`
-also reset. In-flight buffer is lost — bounded, documented loss (F03), not a silent one.
+
+*Made precise 2026-09-17 by OD-004; the previous wording left the unpaired cases unstated.*
+
+The rule is a **paired-signal invariant**. `sequence` and `sourceEpochMs` are reset together by the
+equipment on restart and on the 2^32 ms epoch wrap, so agreement between them is the evidence:
+
+| Observation | Gateway behaviour |
+|---|---|
+| `sequence` increment > 1 | `SEQUENCE_GAP`, counted |
+| `sequence` unchanged | `DUPLICATE_SUSPECTED` |
+| `sequence` **and** `sourceEpochMs` both go backwards | **restart or epoch wrap — not a gap.** Sequence tracking restarts |
+| `sequence` goes backwards, `sourceEpochMs` does not | `SEQUENCE_GAP`. The two signals disagree, so this is not a restart and must not be accepted silently |
+| `sourceEpochMs` goes backwards, `sequence` does not | `SEQUENCE_GAP`. Same reasoning, mirrored |
+
+The suppression in row three is narrow on purpose. **A restart is a discontinuity, but it is not the
+same event as a dropped sample inside one sequence epoch**, and `AC-023` is about the latter. What
+stops the restart rule from hiding real loss is that it fires only when *both* signals agree; either
+one alone is reported.
+
+The alternative reading — every epoch reset raises `SEQUENCE_GAP` — was rejected: it would make the
+49.7-day wrap a data-loss incident, make `telemetry_sequence_gaps_total` untrustworthy, and push
+canonical quality to `UNCERTAIN` for a condition the contract says is distinguishable.
+
+In-flight buffer is lost on a **gateway** restart — bounded, documented loss (F03), not a silent one.
 
 ## 15. Configuration
 Endpoints, `equipmentIds`, `pollIntervalMs` (100), `bufferCapacity` (6 000), `frozenThreshold` (30),

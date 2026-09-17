@@ -45,11 +45,31 @@ Per equipment instance, under `Objects/Equipment/{equipmentId}`:
 | `OperationRatePct` | `ns=<n>;s=Eq.{id}.OperationRatePct` | `Double` | R | `measurements.operationRatePct` |
 | `EquipmentState` | `ns=<n>;s=Eq.{id}.State` | `UInt16` (enum) | R | equipment state (§3) |
 | `SequenceNo` | `ns=<n>;s=Eq.{id}.SequenceNo` | `UInt64` | R | `sequence` |
+| `SourceEpochMs` | `ns=<n>;s=Eq.{id}.SourceEpochMs` | `UInt32` | R | milliseconds since equipment start — the same concept as Modbus register `+20`. **Added 2026-09-17 by OD-004** |
 | **`OperationRateSetpointPct`** | `ns=<n>;s=Eq.{id}.RateSetpoint` | `Double` | **R/W** | `SET_OPERATION_RATE` target |
 
 `OperationRateSetpointPct` is the **only writable node in the entire address space**. This is the OPC
 UA-level expression of ADR-0002 and FR-035: there is physically nothing else for a rogue writer to
 write.
+
+#### Why `SourceEpochMs` is here (OD-004)
+
+Until 2026-09-17 this table had ten nodes and **no restart signal**, while `EDGE_GATEWAY.md` §14
+required the gateway to tell a restart from a gap using `sourceEpochMs`. That rule was evaluable on
+Modbus and **not evaluable on OPC UA**, so the same equipment read through the two protocols would
+have disagreed on `SEQUENCE_GAP` after every restart — which `AC-021` forbids.
+
+Two OPC UA-native signals were considered and rejected:
+
+- **`SourceTimestamp`** is already contracted as `eventTimeUtc` (§1.4 and `TIME_AND_DATA_QUALITY.md`).
+  It is wall-clock value timing, it continues monotonically across an equipment restart, and it
+  does not encode milliseconds since equipment start. Reusing it would have invented a meaning the
+  OPC UA specification does not give it.
+- **`ServerStatus.StartTime`** is standard OPC UA but is scoped to the **server process**. One
+  simulator server hosts many equipment instances, so it cannot witness a single machine
+  restarting, and it would also change on a server restart that no equipment noticed.
+
+The honest fix was to carry the same value the Modbus map already carries.
 
 ### 1.3 Subscription parameters
 

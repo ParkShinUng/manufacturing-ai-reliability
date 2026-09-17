@@ -80,7 +80,13 @@ Using event time for a gate is precisely the bug that would make replayed predic
 | `eventTimeUtc` older than 60 s at ingest | gateway | raise `STALE_READING`, `overall = UNCERTAIN` |
 | `eventTimeUtc` unparseable/absent | gateway | synthesise, raise `TIMESTAMP_SYNTHESISED` |
 | `predictedAtUtc` in the future beyond budget | supervisor | reject `PREDICTION_STALE`; never accept a future prediction |
-| Equipment clock reset (`sourceEpochMs` decrease) | gateway | raise `SEQUENCE_GAP`, restart sequence tracking |
+| Equipment epoch reset (`sourceEpochMs` decrease) **paired with** a `sequence` reset | gateway | restart sequence tracking; **not** `SEQUENCE_GAP` — this is a restart or the 2^32 ms wrap (`EDGE_GATEWAY.md` §14) |
+| `sourceEpochMs` decrease **without** a `sequence` reset, or the reverse | gateway | raise `SEQUENCE_GAP`; the two signals disagree, so it is not a restart |
+
+*Corrected 2026-09-17 by OD-004.* This table previously said an equipment clock reset raises
+`SEQUENCE_GAP` outright, which contradicted `EDGE_GATEWAY.md` §14 and would have turned every
+49.7-day epoch wrap into a reported data-loss incident. The paired-signal rule above is now the
+single statement of this behaviour, and §14 is its normative home.
 
 A reversed timestamp is kept rather than dropped because the *value* may still be good; it is the
 *timing* that is untrustworthy, and `UNCERTAIN` correctly bars it from safety-required use while

@@ -168,3 +168,64 @@ it holds carries no write function codes. Option B would have to filter by Modbu
 achieve the same thing, which an IP-and-port network policy cannot do without deep packet
 inspection. So A moves the failure mode from "any gateway bug can write" to "only a wrong port can
 write", and a port is a reviewable configuration value.
+
+---
+
+# OD-004 — RESOLVED 2026-09-17 — OPC UA has no restart signal, and two documents disagree about what one means
+
+> **Decision: both sub-decisions approved.** Found while implementing the Phase 2 OPC UA client;
+> challenged by Codex before any option was drafted, at the product owner's instruction.
+
+## The problem
+
+`EDGE_GATEWAY.md` §14 requires the gateway to tell an equipment **restart** from a telemetry **gap**
+using `sourceEpochMs`. The Modbus register map carries that value at `+20`. The OPC UA address space
+(§1.2) had ten nodes and **none of them was a restart signal**, so the rule was evaluable on one
+protocol and not the other. After a restart the two paths would have disagreed on `SEQUENCE_GAP`,
+which `AC-021` forbids, and `AC-023` could not be honestly proven on OPC UA either way.
+
+Challenging it surfaced a second defect nobody had noticed: **`TIME_AND_DATA_QUALITY.md` and
+`EDGE_GATEWAY.md` said opposite things** about an epoch reset. One raised `SEQUENCE_GAP`; the other
+suppressed it. The Phase 1 implementation had followed `EDGE_GATEWAY.md` without either document
+being read against the other.
+
+## Decision 1 — protocol parity
+
+Add a per-equipment read-only **`SourceEpochMs`** (`UInt32`) node to the OPC UA address space,
+carrying the same value as Modbus register `+20`. `OT_PROTOCOL_MAPPING.md` §1.2 now lists **eleven**
+nodes.
+
+Two OPC UA-native alternatives were rejected on evidence rather than taste:
+
+| | Why not |
+|---|---|
+| `SourceTimestamp` | already contracted as `eventTimeUtc`; it is wall-clock value timing, continues monotonically across a restart, and does not encode milliseconds since equipment start |
+| `ServerStatus.StartTime` | standard, but scoped to the **server process**. One simulator server hosts many equipment, so it cannot witness one machine restarting — and it changes on a server restart no equipment noticed |
+
+## Decision 2 — epoch reset semantics
+
+`EDGE_GATEWAY.md` is right and **`TIME_AND_DATA_QUALITY.md` was wrong**. A `sequence` reset paired
+with a `sourceEpochMs` reset is a restart or the 2^32 ms wrap, **not** `SEQUENCE_GAP`. Either signal
+resetting alone **is** a gap.
+
+The safety argument, which is the part worth keeping: **a restart is a discontinuity, but it is not
+the same event as a dropped sample inside one sequence epoch**, and `AC-023` is about the latter.
+The paired-signal requirement is what stops the restart rule from hiding real loss — suppression
+fires only when both signals agree, so a single-signal reset is always reported.
+
+The rejected reading would have made the 49.7-day wrap a data-loss incident, made
+`telemetry_sequence_gaps_total` untrustworthy, and pushed canonical quality to `UNCERTAIN` for a
+condition the contract says is distinguishable.
+
+**The Phase 1 simulator is unaffected** — resetting `sequence` and `sourceEpochMs` together on wrap
+was already correct. Only the gateway's interpretation was in question.
+
+## Applied in
+
+`OT_PROTOCOL_MAPPING.md` §1.2 · `EDGE_GATEWAY.md` §14 · `TIME_AND_DATA_QUALITY.md` §4 ·
+`ACCEPTANCE_CRITERIA.md` AC-023 · `TEST_SPECIFICATIONS.md` OT-004 · the simulator address space and
+the gateway client.
+
+No new quality flag was added. The flag vocabulary is schema-closed, so making a restart visible in
+the event stream would be a schema-versioning decision in its own right, and nothing has asked for
+it yet.

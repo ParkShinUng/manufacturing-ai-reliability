@@ -8,7 +8,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- InvariantGlobalization was set here in Phase 1 as a belt-and-braces guard for NFR-010.
+         Removed 2026-09-18: the OPC UA stack's ResourceManager loads en-US resources and cannot
+         start under it. Determinism never depended on the switch - RawSample.ToCanonicalString
+         formats with an explicit InvariantCulture - and that is now asserted directly by
+         DeterminismTests.TelemetryIsBitIdenticalUnderAHostileCulture, which is a stronger
+         guarantee than a build flag that only happened to hide the ambient culture. -->
   </PropertyGroup>
 
 </Project>

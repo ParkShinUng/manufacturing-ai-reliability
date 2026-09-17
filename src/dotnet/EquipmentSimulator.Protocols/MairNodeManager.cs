@@ -6,7 +6,7 @@ namespace Mair.EquipmentSimulator.Protocols;
 /// <summary>
 /// The simulator's OPC UA address space, per <c>OT_PROTOCOL_MAPPING.md</c> §1.2.
 /// <para>
-/// Ten nodes per equipment under <c>Objects/Equipment/{equipmentId}</c>, of which
+/// Eleven nodes per equipment under <c>Objects/Equipment/{equipmentId}</c>, of which
 /// <b>exactly one is writable</b>: <c>RateSetpoint</c>. That is the OPC UA-level expression of
 /// ADR-0002 and FR-035 — there is physically nothing else for a rogue writer to write.
 /// </para>
@@ -46,6 +46,13 @@ public sealed class MairNodeManager : CustomNodeManager2
         public required BaseDataVariableState OperationRatePct { get; init; }
         public required BaseDataVariableState State { get; init; }
         public required BaseDataVariableState SequenceNo { get; init; }
+
+        /// <summary>
+        /// OD-004. Without it the gateway cannot tell an equipment restart from a telemetry gap on
+        /// OPC UA, while it can on Modbus - so the two paths would disagree on SEQUENCE_GAP after
+        /// every restart, which AC-021 forbids.
+        /// </summary>
+        public required BaseDataVariableState SourceEpochMs { get; init; }
         public required BaseDataVariableState RateSetpoint { get; init; }
     }
 
@@ -116,6 +123,7 @@ public sealed class MairNodeManager : CustomNodeManager2
             OperationRatePct = Variable(folder, equipmentId, "OperationRatePct", "OperationRatePct", DataTypeIds.Double, writable: false),
             State = Variable(folder, equipmentId, "State", "EquipmentState", DataTypeIds.UInt16, writable: false),
             SequenceNo = Variable(folder, equipmentId, "SequenceNo", "SequenceNo", DataTypeIds.UInt64, writable: false),
+            SourceEpochMs = Variable(folder, equipmentId, "SourceEpochMs", "SourceEpochMs", DataTypeIds.UInt32, writable: false),
             RateSetpoint = setpoint,
         };
 
@@ -208,6 +216,7 @@ public sealed class MairNodeManager : CustomNodeManager2
             Set(nodes.OperationRatePct, sample.OperationRatePct, now);
             Set(nodes.State, (ushort)ModbusRegisterEncoder.StateCode(sample.State), StatusCodes.Good, now);
             Set(nodes.SequenceNo, sample.Sequence, StatusCodes.Good, now);
+            Set(nodes.SourceEpochMs, sample.SourceEpochMs, StatusCodes.Good, now);
             Set(nodes.RateSetpoint, sample.OperationRatePct ?? 0d, StatusCodes.Good, now);
         }
     }
@@ -231,6 +240,7 @@ public sealed class MairNodeManager : CustomNodeManager2
         yield return n.OperationRatePct;
         yield return n.State;
         yield return n.SequenceNo;
+        yield return n.SourceEpochMs;
     }
 
     private static void Set(BaseDataVariableState node, double? value, DateTime timestamp)

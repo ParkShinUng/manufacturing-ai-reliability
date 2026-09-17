@@ -204,17 +204,27 @@ validates against `telemetry.schema.json` · `quality_flags_total{flag,channel}`
 `quality.overall == GOOD`. Without it an implementation that flagged everything would pass.
 
 ### OT-004 — no gap goes undetected → AC-023
-**Setup:** 20 equipment, healthy, gateway connected.
-**Trigger:** drop telemetry samples at the source so `sequence` skips — at least one single-sample
-gap, one multi-sample gap, and one gap spanning a reconnect.
-**Expected:** every discontinuity is detected and reported.
-**Assert:** `SEQUENCE_GAP` raised on the `__event__` channel for each gap ·
-`telemetry_sequence_gaps_total` increases by exactly the number of gaps · **no gap is missed** · an
-equipment restart, which resets `sequence` **and** `sourceEpochMs` together, is **not** reported as
-a gap (§14) · a `sourceEpochMs` wrap is likewise not a gap.
+**Setup:** 20 equipment, healthy, gateway connected. **Run the whole matrix on both protocols** —
+OD-004 exists because the two disagreed, so agreement is what is being proven.
+**Trigger:** the five cases below.
+**Expected:** the paired-signal invariant in `EDGE_GATEWAY.md` §14, identically on OPC UA and Modbus.
 
-The restart and wrap cases are the point: a detector that flags every `sequence` decrease would
-pass the first three assertions and cry wolf on every restart.
+| # | `sequence` | `sourceEpochMs` | Expected |
+|---|---|---|---|
+| 1 | increments by > 1 | advances normally | `SEQUENCE_GAP`, counted |
+| 2 | unchanged | unchanged | `DUPLICATE_SUSPECTED`, **not** a gap |
+| 3 | resets | resets | **not** a gap — restart or 2^32 ms wrap; tracking restarts |
+| 4 | resets | advances normally | `SEQUENCE_GAP` — the signals disagree, so it is not a restart |
+| 5 | advances normally | resets | `SEQUENCE_GAP` — same, mirrored |
+
+**Assert:** `SEQUENCE_GAP` on the `__event__` channel exactly in cases 1, 4 and 5 ·
+`telemetry_sequence_gaps_total` increases by exactly that count · **no gap inside a continuous
+source epoch is missed** · the OPC UA and Modbus paths produce the **same** flags for the same case.
+
+Cases 3, 4 and 5 are the point. A detector that flags every `sequence` decrease passes case 1 and
+cries wolf on every restart; one that suppresses every decrease passes cases 1 and 3 and **hides
+real loss** in cases 4 and 5. Only the paired signal separates them, which is why OD-004 had to add
+`SourceEpochMs` to the OPC UA address space before this test could exist at all.
 
 ## 5. Load test specifications
 
@@ -233,6 +243,9 @@ pass the first three assertions and cry wolf on every restart.
 | File | Proves |
 |---|---|
 | `FaultProfileSignatureTests.cs` | **AC-018** — the documented signature of all 11 fault profiles |
+| `ModbusCodecTests.cs`, `ModbusDataStoreTests.cs`, `ModbusOverTheWireTests.cs` | Modbus half of **AC-021**, the §2.4 response table, and OD-003's read-only listener — on real sockets |
+| `QualityDerivationTests.cs` | **PROP-06** — `quality.overall` for every flag combination |
+| `NormalisationTests.cs` | **AC-022**, **AC-023** and the egress buffer |
 | `DeterminismTests.cs` | **AC-018 / PROP-03** — identical seed ⇒ bit-identical telemetry; different seed ⇒ different telemetry; `sequence` monotonicity and the restart reset |
 | `OodProfileTests.cs` | **AC-019** — the rpm↔rate relationship is broken while every value stays in range and no range check fires |
 | `ProtectiveConditionTests.cs` | **AC-020** — the four sensed protective conditions plus `STOP_REQUIRED`, `FAULT` latching, operator reset, and the zero-external-dependency proof that L3 survives total platform loss |

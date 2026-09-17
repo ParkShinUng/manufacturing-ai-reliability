@@ -88,4 +88,29 @@ public sealed class DeterminismTests
         Assert.Equal(0UL, afterRestart.Sequence);
         Assert.Equal(0u, afterRestart.SourceEpochMs);
     }
+
+    [Fact]
+    public void TelemetryIsBitIdenticalUnderAHostileCulture()
+    {
+        // NFR-010 must not depend on the ambient culture. de-DE writes 1,5 where the invariant
+        // culture writes 1.5, so a formatting path that used CurrentCulture would produce a
+        // different string here - and the seeded run would stop being reproducible off a machine
+        // configured in English.
+        var original = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+            var german = Run(Options(20260915), 500);
+
+            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+            var invariant = Run(Options(20260915), 500);
+
+            Assert.Equal(invariant, german);
+            Assert.Contains(".", invariant, StringComparison.Ordinal); // a decimal point, not a comma
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = original;
+        }
+    }
 }

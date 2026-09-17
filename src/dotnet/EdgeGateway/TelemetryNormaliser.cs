@@ -225,31 +225,42 @@ public sealed class TelemetryNormaliser
     {
         if (_lastSequence is { } previous)
         {
-            var epochWentBackwards = _lastSourceEpochMs is { } lastEpoch && sourceEpochMs < lastEpoch;
+            var sequenceReset = sequence < previous;
+            var epochReset = _lastSourceEpochMs is { } lastEpoch && sourceEpochMs < lastEpoch;
 
-            if (sequence == previous)
+            if (sequenceReset && epochReset)
             {
-                flags.Add(new ChannelFlag(Channel.Event, QualityFlag.DuplicateSuspected));
+                // Case 3: both signals agree, so this is a restart or the 2^32 ms wrap. Tracking
+                // restarts and nothing is flagged.
             }
-            else if (sequence < previous)
+            else if (sequenceReset || epochReset)
             {
-                if (!epochWentBackwards)
-                {
-                    // Sequence went backwards without the epoch doing the same: the two signals
-                    // disagree, which is not a restart and must not be silently accepted.
-                    flags.Add(new ChannelFlag(Channel.Event, QualityFlag.SequenceGap));
-                    SequenceGaps++;
-                }
+                // Cases 4 and 5: exactly one signal went backwards. The two disagree, so it is not
+                // a restart, and accepting it silently is how real loss would hide behind the
+                // restart rule.
+                Gap(flags);
+            }
+            else if (sequence == previous)
+            {
+                // Case 2.
+                flags.Add(new ChannelFlag(Channel.Event, QualityFlag.DuplicateSuspected));
             }
             else if (sequence - previous > 1)
             {
-                flags.Add(new ChannelFlag(Channel.Event, QualityFlag.SequenceGap));
-                SequenceGaps++;
+                // Case 1: samples lost inside a continuous source epoch, which is what AC-023 is
+                // actually about.
+                Gap(flags);
             }
         }
 
         _lastSequence = sequence;
         _lastSourceEpochMs = sourceEpochMs;
+    }
+
+    private void Gap(List<ChannelFlag> flags)
+    {
+        flags.Add(new ChannelFlag(Channel.Event, QualityFlag.SequenceGap));
+        SequenceGaps++;
     }
 
     private void AppendBufferOverflowFlag(List<ChannelFlag> flags)
