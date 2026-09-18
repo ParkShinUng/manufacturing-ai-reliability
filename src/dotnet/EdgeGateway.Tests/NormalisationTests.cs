@@ -15,8 +15,8 @@ public sealed class NormalisationTests
         Channel.Rpm, Channel.TorqueNm, Channel.OperationRatePct,
     ];
 
-    private static TelemetryNormaliser Gateway(FakeTimeProvider? time = null)
-        => new("eq-001", "edge-gateway@test", time ?? new FakeTimeProvider());
+    private static TelemetryNormaliser Gateway(SteppingClock? time = null)
+        => new("eq-001", "edge-gateway@test", time ?? new SteppingClock());
 
     private static Sim.RawSample Sample(
         double? torque = 42, double? vibration = 2.2, ulong sequence = 1, uint epochMs = 100) => new()
@@ -296,8 +296,12 @@ public sealed class NormalisationTests
     }
 }
 
-/// <summary>A clock the tests control, so timestamps are deterministic.</summary>
-internal sealed class FakeTimeProvider : TimeProvider
+/// <summary>
+/// A clock that advances 100 ms per read, so timestamps are deterministic and distinct. Distinct
+/// from Microsoft.Extensions.Time.Testing.FakeTimeProvider, which the poll-loop tests use because
+/// they need timer support; this one only has to make GetUtcNow move.
+/// </summary>
+internal sealed class SteppingClock : TimeProvider
 {
     private DateTimeOffset _now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
 

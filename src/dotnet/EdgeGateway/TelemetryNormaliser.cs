@@ -30,6 +30,13 @@ public sealed class TelemetryNormaliser
     private readonly Dictionary<Channel, int> _repeatCount = [];
     private readonly Dictionary<Channel, Queue<double>> _trailing = [];
 
+    // Running sum and sum of squares over the trailing window, so the outlier check is O(1) per
+    // sample rather than O(window). The naive version recomputed mean and variance across all 600
+    // samples for all 7 channels on every tick: 250 equipment at 10 Hz would have spent ~10 M
+    // operations a second on it, which is a real cost for a check that is supposed to be cheap.
+    private readonly Dictionary<Channel, double> _trailingSum = [];
+    private readonly Dictionary<Channel, double> _trailingSumOfSquares = [];
+
     private ulong? _lastSequence;
     private uint? _lastSourceEpochMs;
     private bool _bufferOverflowPending;
@@ -53,6 +60,8 @@ public sealed class TelemetryNormaliser
         foreach (var channel in Measurements)
         {
             _trailing[channel] = new Queue<double>(TrailingWindowSamples);
+            _trailingSum[channel] = 0;
+            _trailingSumOfSquares[channel] = 0;
         }
     }
 
@@ -188,14 +197,18 @@ public sealed class TelemetryNormaliser
     /// <summary>Step 5. Needs a full window first, or startup noise reads as anomalous.</summary>
     private bool IsOutlier(Channel channel, double value)
     {
-        var window = _trailing[channel];
-        if (window.Count < TrailingWindowSamples)
+        var count = _trailing[channel].Count;
+        if (count < TrailingWindowSamples)
         {
             return false;
         }
 
-        var mean = window.Average();
-        var variance = window.Sum(v => (v - mean) * (v - mean)) / window.Count;
+        var mean = _trailingSum[channel] / count;
+
+        // E[x^2] - E[x]^2. Clamped at zero because floating-point cancellation can drive it very
+        // slightly negative when the window is nearly constant, and Sqrt of that is NaN - which
+        // would silently disable the check rather than fail loudly.
+        var variance = Math.Max(0, (_trailingSumOfSquares[channel] / count) - (mean * mean));
         var sigma = Math.Sqrt(variance);
 
         return sigma > 0 && Math.Abs(value - mean) > OutlierSigma * sigma;
@@ -210,9 +223,14 @@ public sealed class TelemetryNormaliser
 
         var window = _trailing[channel];
         window.Enqueue(value);
+        _trailingSum[channel] += value;
+        _trailingSumOfSquares[channel] += value * value;
+
         if (window.Count > TrailingWindowSamples)
         {
-            window.Dequeue();
+            var evicted = window.Dequeue();
+            _trailingSum[channel] -= evicted;
+            _trailingSumOfSquares[channel] -= evicted * evicted;
         }
     }
 
