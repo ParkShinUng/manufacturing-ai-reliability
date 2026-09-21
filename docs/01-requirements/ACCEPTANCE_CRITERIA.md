@@ -37,6 +37,21 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   not reported as one. Either signal resetting **alone** is a gap. Both protocols must agree, which
   is why OPC UA now carries `SourceEpochMs`.
 
+  *Amended 2026-09-21 by OD-005, on measurement.* This is a **detection** criterion, and what
+  counts as achievable prevention differs by protocol:
+
+  - **OPC UA subscription** — the server samples at 50 ms and queues 10 values per item (§1.3), so a
+    client that misses a publishing cycle still receives what it missed. Zero gaps after start-up
+    warm-up is required.
+  - **Modbus latest-register polling** — the register image holds only the newest value, so a sample
+    produced and overwritten between two polls is gone. **No silent loss** is required; no loss is
+    not, because the selected design cannot deliver it.
+
+  Measured on one equipment for 60 s with both protocols running against the same simulator: the
+  subscribed path received 599 of 601 distinct samples with 0 gaps; the polled path received 439 of
+  601 — **73 %** — with 161 gaps and 162 duplicate reads. Every one of those 161 was reported, which
+  is the criterion actually being met.
+
 ## Event platform
 
 - **AC-003 → FR-011** — Replay a known Kafka range into **projection** consumer groups and verify

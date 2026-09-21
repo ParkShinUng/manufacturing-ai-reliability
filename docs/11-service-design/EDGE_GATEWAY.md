@@ -10,7 +10,8 @@ and source timestamps) and Modbus (raw registers, none of those) is what makes t
 normalisation layer rather than a field rename.
 
 ## 2. Responsibilities
-OPC UA + Modbus client sessions; reconnect without process restart (FR-004); normalisation (FR-005);
+OPC UA **subscriptions** (§1.3 of the protocol mapping) and Modbus **polling**; reconnect without
+process restart (FR-004); normalisation (FR-005);
 **closed-vocabulary quality flags and derived `quality.overall`** (DEC-008, sole owner);
 timestamp assignment and anomaly flagging; `sequence` gap detection; bounded buffering;
 Kafka production; **gateway-observed equipment state** to `factory.equipment-states.v1`.
@@ -97,6 +98,20 @@ gates a fabricated reading.
 | Sensor bad | `null` + flag; never substituted |
 | Sequence gap | `SEQUENCE_GAP` + `telemetry_sequence_gaps_total` |
 | Clock skew | `TIMESTAMP_REVERSED` beyond budget |
+
+### 11.1 The two paths are not equally lossless (OD-005)
+
+Measured, not assumed: over 60 s against a simulator producing at 100 ms, the OPC UA subscription
+received 599 of 601 distinct samples with zero gaps; Modbus polling at the same cadence received
+439 — 73 % — with 161 gaps and 162 duplicate reads.
+
+The difference is where the sampling happens. A subscription asks the **server** to sample at 50 ms
+and queue 10 values per item, so a client that misses a publishing cycle still receives what it
+missed. A poller reads whatever the register holds now, and two clocks of the same period drift past
+each other forever.
+
+Both are correct implementations of their protocol. `AC-023` therefore asks Modbus for **detection**
+and OPC UA for **prevention**, and `LOAD-001` reports coverage rather than asserting it is total.
 
 ## 12. Timeout / retry / idempotency / ordering
 OPC UA: publish 100 ms, keep-alive 5. Modbus: poll 100 ms, response timeout 250 ms, **one block read

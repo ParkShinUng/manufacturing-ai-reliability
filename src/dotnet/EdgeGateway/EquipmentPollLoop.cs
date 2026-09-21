@@ -55,6 +55,8 @@ public sealed class EquipmentPollLoop
         _time = timeProvider ?? TimeProvider.System;
     }
 
+    private DateTimeOffset _nextDeadline;
+
     public bool ProtocolConnected { get; private set; }
 
     public long PollsCompleted { get; private set; }
@@ -64,20 +66,33 @@ public sealed class EquipmentPollLoop
     /// <summary>Loop deadline overruns. Counted, never silently skipped (`EQUIPMENT_SIMULATOR.md` §12).</summary>
     public long LoopOverruns { get; private set; }
 
+    /// <summary>Reads that threw. A protocol fault is recoverable, but it is not nothing.</summary>
+    public long ReadFailures { get; private set; }
+
+    public long ConnectFailures { get; private set; }
+
+    /// <summary>
+    /// The most recent failure, kept because <c>CODING_STANDARDS.md</c> forbids swallowed
+    /// exceptions. The loop must survive a protocol fault, but an operator looking at a gateway
+    /// that keeps reconnecting needs to know <b>why</b>, and a catch that records nothing turns a
+    /// diagnosable fault into a mystery.
+    /// </summary>
+    public string? LastFailure { get; private set; }
+
     /// <summary>
     /// Runs until cancelled. Exits only on cancellation — every other failure is a protocol fault
     /// to recover from, not a reason to stop polling.
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        _nextDeadline = _time.GetUtcNow();
+
         while (!cancellationToken.IsCancellationRequested)
         {
             if (!ProtocolConnected && !await TryConnectAsync(cancellationToken))
             {
                 continue;
             }
-
-            var started = _time.GetTimestamp();
 
             try
             {
@@ -95,7 +110,7 @@ public sealed class EquipmentPollLoop
             {
                 return;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Any protocol failure: the endpoint is gone, stale, or refusing. The equipment is
                 // OFFLINE until a read succeeds; the loop itself keeps running.
@@ -104,11 +119,13 @@ public sealed class EquipmentPollLoop
                 // accept works while its reads fail - becomes a hot loop: connect, fail, connect,
                 // fail, with nothing between the attempts.
                 ProtocolConnected = false;
+                ReadFailures++;
+                LastFailure = $"{ex.GetType().Name}: {ex.Message}";
                 await Delay(_backoff.Next(), cancellationToken);
                 continue;
             }
 
-            await WaitForNextTickAsync(started, cancellationToken);
+            await WaitForNextTickAsync(cancellationToken);
         }
     }
 
@@ -125,8 +142,10 @@ public sealed class EquipmentPollLoop
         {
             return false;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            ConnectFailures++;
+            LastFailure = $"{ex.GetType().Name}: {ex.Message}";
             await Delay(_backoff.Next(), cancellationToken);
             return false;
         }
@@ -142,16 +161,36 @@ public sealed class EquipmentPollLoop
         }
     }
 
-    private async Task WaitForNextTickAsync(long started, CancellationToken cancellationToken)
+    /// <summary>
+    /// Waits until the next <b>absolute</b> deadline rather than sleeping for "however much of the
+    /// period is left".
+    /// <para>
+    /// The relative form drifts, and it drifts one way: every sleep overshoots a little — on Windows
+    /// the default timer granularity is about 15 ms against a 100 ms period — and the error
+    /// accumulates, so the gateway settles into polling slightly slower than the equipment produces.
+    /// It then misses a sample regularly and forever. The first LOAD-001 run showed ~11 % of samples
+    /// lost that way, reported as `SEQUENCE_GAP` because that is exactly what they were.
+    /// </para>
+    /// <para>
+    /// Anchoring on a fixed schedule makes an overshoot self-correcting: the next wait is shorter by
+    /// however much the last one ran over.
+    /// </para>
+    /// </summary>
+    private async Task WaitForNextTickAsync(CancellationToken cancellationToken)
     {
-        var elapsed = _time.GetElapsedTime(started);
-        var remaining = PollInterval - elapsed;
+        _nextDeadline += PollInterval;
+        var remaining = _nextDeadline - _time.GetUtcNow();
 
         if (remaining <= TimeSpan.Zero)
         {
             // The cycle took longer than its own period. Counted rather than absorbed: a gateway
             // quietly polling at 150 ms would look healthy while silently halving its sample rate.
             LoopOverruns++;
+
+            // Re-anchor instead of trying to catch up. Chasing a missed deadline turns one slow
+            // cycle into a burst of back-to-back polls, which is worse for the endpoint than the
+            // sample that was already lost.
+            _nextDeadline = _time.GetUtcNow();
             return;
         }
 

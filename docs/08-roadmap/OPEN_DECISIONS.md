@@ -229,3 +229,75 @@ the gateway client.
 No new quality flag was added. The flag vocabulary is schema-closed, so making a restart visible in
 the event stream would be a schema-versioning decision in its own right, and nothing has asked for
 it yet.
+
+---
+
+# OD-005 — RESOLVED 2026-09-21 — polling at the producer's cadence cannot be lossless, and the criteria demanded that it be
+
+> **Decision: amend the acceptance criteria.** Approved after the §1.3 subscription was implemented
+> and the two paths were measured side by side, at the product owner's instruction — the decision
+> was explicitly deferred until there was a number.
+
+## How it surfaced
+
+`LOAD-001` was built and run for the first time. It failed: 20 equipment, real sockets, 6.5 % of
+samples reported as `SEQUENCE_GAP` with nothing inducing loss.
+
+Two things came out of investigating it. One was a genuine defect — the poll loop slept for
+"however much of the period is left", and because a timer only ever wakes **late**, the error
+accumulated and the gateway settled into polling slightly slower than the equipment produced.
+Anchoring on absolute deadlines took coverage from 89 % to 97.4 %. The rest was structural.
+
+## What was measured
+
+Claude's argument was that Modbus polling is lossy while OPC UA's subscription is not. Codex
+rejected the second half: **the OPC UA client was not subscribing at all**. It used a batch read
+through the same polling abstraction, so §1.3 — publishing 100 ms, sampling 50 ms, queue 10,
+discard-oldest — was entirely unimplemented, and the comparison had never been made.
+
+The subscription was implemented and both paths were run against the same simulator, same 60 s,
+same machine:
+
+| | Modbus, polled | OPC UA, §1.3 subscription |
+|---|---|---|
+| produced | 601 | 601 |
+| distinct samples received | **439** | **599** |
+| coverage | **73.0 %** | **99.7 %** |
+| sequence gaps | **161** | **0** |
+| duplicate reads | 162 | — |
+
+161 gaps and 162 duplicates against 601 produced is textbook equal-cadence phase drift: the poller
+alternates between re-reading a sample it already has and missing one it never saw. Codex confirmed
+no further defect is needed to explain it.
+
+**Two measurement bugs had to be fixed first, and the first run said the opposite.** Samples were
+assembled by grouping all ten monitored items on a shared source timestamp, which never completed
+because a monitored item reports **on change** and `State` sits at `RUNNING` for the whole run — the
+subscribed path scored 0.5 %. And coverage counted *records received* rather than *distinct
+sequences*, so duplicate reads inflated the polled path to 99.8 %. Reported as they first came out,
+those numbers would have justified exactly the wrong decision.
+
+## Decision
+
+`AC-023` stays a **detection** criterion and now says what each protocol can achieve:
+
+- **OPC UA subscription** — zero gaps after start-up warm-up. The server queues, so a missed
+  publishing cycle is recovered.
+- **Modbus latest-register polling** — no **silent** loss. Not no loss: the register image holds only
+  the newest value, and no polling discipline recovers what was overwritten.
+
+`LOAD-001` drops "no dropped telemetry, no gaps" and instead **reports** records, distinct
+sequences, duplicates, coverage, gaps, read failures, overruns and buffer drops, asserting per
+protocol. Coverage is measured, not thresholded — setting a number before running on a
+representative deployment profile would be inventing a target, and a laptop is not that profile.
+
+Rejected: giving the simulator a sample queue (it stops being ordinary Modbus register polling) and
+phase-locking the gateway to simulator ticks (it proves a synchronised lab, not an OT design).
+
+## What this does not prove
+
+Coverage was measured; **atomicity was not**. The subscription assembles a sample on the
+`SequenceNo` notification from the latest known value of every other node, and callback ordering
+could pair a marker from tick N with a measurement from N-1. Codex flagged it, and
+`OpcUaSampleCoherenceTests` now checks that changing nodes carry the marker's own source epoch,
+leaving stable nodes such as `State` as latest-known.

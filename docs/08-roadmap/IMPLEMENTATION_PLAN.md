@@ -21,7 +21,7 @@ still unrequested, and this paragraph applies to each of them individually.
 - [x] simulator physics, OT address maps, state machines, failure matrix, 12 service designs
 - [x] **human approves the architecture** — APPROVED_WITH_CONDITIONS, all conditions satisfied (2026-09-15)
 
-## Phase 1 — Equipment Simulator / HIL — **IN PROGRESS**
+## Phase 1 — Equipment Simulator / HIL — **COMPLETE**
 Equipment physics and degradation model · equipment state machine (T1–T12) · 11 fault profiles ·
 **L3 self-protection**: protective trips and dead-man revert · deterministic seeding ·
 `sequence` and `sourceEpochMs` assignment.
@@ -43,7 +43,7 @@ Equipment physics and degradation model · equipment state machine (T1–T12) ·
 > unhandled *gateway* exception; canonical telemetry is produced by the Edge Gateway, so Phase 1
 > cannot prove it.
 
-## Phase 2 — Edge Gateway + OPC UA / Modbus
+## Phase 2 — Edge Gateway + OPC UA / Modbus — **IN PROGRESS**
 Simulator-side **protocol server endpoints** per `OT_PROTOCOL_MAPPING.md` · gateway client sessions ·
 normalisation · closed quality vocabulary and derived `quality.overall` · reconnect without process
 restart · bounded buffering with drop-oldest.
@@ -93,7 +93,9 @@ heartbeat · `seekToEnd` restart semantics · fallback requests.
 Sole application equipment writer · mTLS identity and `authenticatedSource` · `controlEpoch`
 fencing and lease issuance · expiry, supersession, bounds, rate budget, durable idempotency ·
 **fallback watchdog** · control mode ownership and persistence.
-**Proof:** AC-004, AC-007, AC-011, AC-012, AC-013, AC-014, AC-038, AC-040.
+**Proof:** AC-004, AC-007, AC-011, AC-012, AC-013, AC-014, AC-038, **AC-039**, AC-040.
+*`AC-039` added 2026-09-18: it verifies FR-030 and FR-035, both P0, and had been assigned to no
+phase at all — found by the AC traceability check.*
 **This phase closes the reliability claim.** Until it ships, ADR-0011 is documented but unproven.
 
 ## Phase 8 — Observability

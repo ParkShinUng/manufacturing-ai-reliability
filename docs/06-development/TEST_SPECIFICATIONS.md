@@ -230,11 +230,37 @@ real loss** in cases 4 and 5. Only the paired signal separates them, which is wh
 
 | ID | Scenario | Asserts |
 |---|---|---|
-| LOAD-001 | 20 equipment @ 100 ms for 30 min | T-01 demo, L-01, no dropped telemetry, no gaps. Shares its harness with `OT-001` (AC-001) |
+| LOAD-001 | 20 equipment @ 100 ms for 30 min | see §5a. Shares its harness with `OT-001` (AC-001) |
 | LOAD-002 | 250 equipment @ 100 ms for 15 min | T-01 load, buffer depth bounded, lag bounded |
 | LOAD-003 | Sustained command rate | T-04, L-06 |
 | LOAD-004 | End-to-end latency under load | **L-07 P95 ≤ 1 200 ms** |
 | LOAD-005 | Projection rebuild from 6 h telemetry | R-08 ≤ 10 min |
+
+### LOAD-001 in detail — amended 2026-09-21 by OD-005
+
+The original wording was **"no dropped telemetry, no gaps"**. That is not achievable by Modbus
+latest-register polling at the same cadence as the producer, and the first real run proved it:
+73 % coverage, 161 gaps, 162 duplicate reads over 60 s — the signature of two equal-period clocks
+drifting past each other, with no other defect needed to explain it.
+
+Requiring the impossible would have left one of two outcomes: a permanently red criterion, or
+someone quietly relaxing the detector until it went green. The criterion is therefore what the
+design can honestly deliver.
+
+**Report** — `scripts/run-load-001.mjs` writes all of these to `reports/load/`:
+`records` · `distinct source sequences` · `duplicates` · `coverage %` · `sequence gaps` ·
+`read failures` · `loop overruns` · `buffer drops`.
+
+**Assert, per protocol:**
+
+| Path | Requirement |
+|---|---|
+| OPC UA subscription | **zero** sequence gaps after start-up warm-up · bounded incomplete groups at start-up only · no buffer drops |
+| Modbus polling | **every** skipped sequence flagged — no silent loss · duplicates counted · **zero** read failures on a healthy run · coverage measured and reported, not asserted to be 100 % |
+
+Coverage is a **measurement**, not a threshold. Setting a number before understanding what the
+platform does on a representative deployment profile would be inventing a target, and a developer
+laptop is not that profile.
 
 ## 5a. Phase 1 unit tests — implemented
 
@@ -277,3 +303,37 @@ AC is a build failure, not a documentation gap.
 than an enforced property, and it has already been wrong once: at Phase 2 initialisation four of the
 five Phase 2 ACs had no specification here while this paragraph claimed otherwise (§4a). Building
 the mapping check is Phase 2 work, so that the claim stops depending on whoever last read the file.
+
+## 7a. Specifications not yet written
+
+*Added 2026-09-18, when the traceability check in §7 was finally built and found that **25 of 44**
+criteria had no specification — not the four the Phase 2 Definition-of-Ready check had spotted by
+hand. §7 had been asserting the opposite since v0.3.*
+
+Every criterion below belongs to a phase that has **not started**. The check
+(`tests/contract/ac_traceability.mjs`) enforces three things, and the second is what stops this list
+becoming a permanent excuse:
+
+1. every AC is either covered by a specification or listed here;
+2. **every AC listed here belongs to a phase that has not started** — so the list must shrink as a
+   phase begins, or the build fails;
+3. nothing is both covered and listed, so a stale entry cannot linger.
+
+| AC | Phase |
+|---|---|
+| AC-026, AC-027 | 3 |
+| AC-006, AC-028, AC-029, AC-030 | 4 |
+| AC-008, AC-024, AC-025, AC-032 | 5 |
+| AC-016, AC-017 | 6 |
+| AC-014, AC-038, AC-039, AC-040 | 7 |
+| AC-035, AC-036, AC-041, AC-044 | 8 |
+| AC-043 | 10 |
+| AC-009, AC-031, AC-037 | 11 |
+| AC-042 | 12 |
+
+**`AC-039` was assigned to no phase at all.** `IMPLEMENTATION_PLAN.md` names every other criterion in
+some phase's proof list; this one appeared in none of them, so nobody had been told to prove it —
+and it verifies **FR-030 and FR-035**, both P0: no AI service holds equipment credentials, and no
+component other than the Control Service writes to equipment. It is assigned to **Phase 7**, where
+the Control Service and therefore the write path exist. Part of it is already provable — OD-003's
+read-only Modbus listener refuses writes with `0x01` — and that clause is recorded on the criterion.

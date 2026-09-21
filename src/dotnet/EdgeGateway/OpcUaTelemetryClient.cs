@@ -104,6 +104,19 @@ public sealed class OpcUaTelemetryClient : IAsyncDisposable
         _namespaceIndex = (ushort)index;
     }
 
+    /// <summary>
+    /// Starts the §1.3 subscription for one equipment. The session must already be connected, so
+    /// the namespace index has been resolved by URI rather than assumed.
+    /// </summary>
+    public async Task<OpcUaSubscription> SubscribeAsync(
+        string equipmentId, CancellationToken cancellationToken = default)
+    {
+        var session = _session ?? throw new InvalidOperationException("not connected");
+        var subscription = new OpcUaSubscription(session, equipmentId, _namespaceIndex);
+        await subscription.StartAsync(cancellationToken);
+        return subscription;
+    }
+
     /// <summary>FR-004 / R-01: recovery without a process restart.</summary>
     public async Task ReconnectAsync(CancellationToken cancellationToken = default)
     {

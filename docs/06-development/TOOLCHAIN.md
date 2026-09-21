@@ -24,11 +24,37 @@ The baseline favors supported/LTS or mature stable releases over preview release
 `OPCFoundation.NetStandard.Opc.Ua` **meta package is deliberately not used** — it has no framework
 assets of its own and pulls in GDS and complex-type assemblies neither service needs.
 
-Two verification steps are **outstanding** and must run before the first Phase 2 commit, per the
-procedure above: a licence scan of the full transitive graph (only the direct packages have been
-checked), and resolution of exact transitive versions into a lockfile. `NModbus` targets
-`net6.0`/`netstandard`/`net46` rather than `net10.0`; it loads on `net10.0`, but that it is not being
-rebuilt against current targets is a maintenance signal worth watching.
+### Verification record — 2026-09-18
+
+Both steps this section previously listed as outstanding are **done**.
+
+**Transitive versions are pinned.** `RestorePackagesWithLockFile` is on in
+`src/dotnet/Directory.Build.props`, and five `packages.lock.json` files are committed. Without them a
+restore on another machine can resolve a different transitive graph — the same class of problem as a
+floating container tag.
+
+**Licence scan of the full graph: 29 packages, all permissive.** Run with
+`node scripts/license-scan.mjs`, which reads the `.nuspec` and, where the package ships a licence
+file, the file itself from the NuGet cache.
+
+| Licence | Packages |
+|---|---|
+| MIT | the six OPC Foundation packages, `NModbus`, `BitFaster.Caching`, and the Microsoft.Extensions set |
+| Apache-2.0 | the xunit set |
+
+Two findings worth keeping:
+
+- The **packaged** OPC Foundation `LICENSE.txt` is MIT, not merely the repository's. That is the
+  claim that matters when the dependency is consumed from NuGet, and it is a different artefact from
+  the one ADR-0020 checked on GitHub.
+- `xunit.abstractions 2.0.3` still uses the deprecated `licenseUrl` form, so the scanner cannot
+  classify it offline. Fetched and confirmed **Apache-2.0**; it is a test-only dependency.
+
+No copyleft and no membership-gated licence anywhere in the graph. ADR-0020's licence claim,
+deliberately narrowed to the direct packages at the time, now holds for all of them.
+
+`NModbus` targets `net6.0`/`netstandard`/`net46` rather than `net10.0`; it loads on `net10.0`, but
+that it is not being rebuilt against current targets is a maintenance signal worth watching.
 
 ## Verification procedure at Phase 1 initialization
 

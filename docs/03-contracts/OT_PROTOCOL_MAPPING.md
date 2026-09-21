@@ -264,6 +264,22 @@ One block read per equipment, not seven single-register reads: it is atomic with
 simulator's update cycle, so a poll cannot straddle two model steps and return a physically
 inconsistent sample.
 
+#### Polling at the producer's cadence is lossy by construction (OD-005)
+
+The block read is atomic, but the register image holds **only the newest value**. A sample produced
+and overwritten between two polls is gone, and no polling discipline recovers it: two clocks of the
+same period drift past each other, so the gateway alternates between re-reading a sample it already
+has and missing one it never saw.
+
+Measured over 60 s against a simulator ticking at 100 ms, with the gateway polling at 100 ms:
+**439 of 601 distinct samples**, 161 gaps, 162 duplicate reads. Every gap was reported — that is
+what `sequence` is for (§2.3) — but reporting is not recovery.
+
+This is a property of Modbus, not a defect of this gateway. OPC UA's subscription (§1.3) does not
+share it, because the **server** samples and queues; the same 60 s measurement gave 599 of 601 with
+zero gaps. `AC-023` and `LOAD-001` were amended to require detection from Modbus and prevention from
+OPC UA, rather than demanding the same guarantee from a protocol that cannot give it.
+
 ---
 
 ## 3. Equipment state enum (shared by both protocols)
