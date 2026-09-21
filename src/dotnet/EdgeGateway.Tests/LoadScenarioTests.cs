@@ -50,6 +50,30 @@ public sealed class LoadScenarioTests
 
         public long Gaps => Normalisers.Sum(n => n.SequenceGaps);
 
+        public IReadOnlyList<OpcUaSubscriptionTelemetrySource> OpcUaSources { get; init; } = [];
+
+        /// <summary>The report, taken while the subscriptions still exist.</summary>
+        public string Snapshot { get; init; } = "";
+
+        /// <summary>How many sequences each flagged gap skipped: "1:30 2:4" means thirty single misses and four doubles.</summary>
+        private string GapSizes()
+        {
+            var sizes = new SortedDictionary<ulong, int>();
+            foreach (var sink in Sinks)
+            {
+                for (var i = 1; i < sink.Records.Count; i++)
+                {
+                    var (a, b) = (sink.Records[i - 1].Sequence, sink.Records[i].Sequence);
+                    if (b > a + 1)
+                    {
+                        sizes[b - a - 1] = sizes.GetValueOrDefault(b - a - 1) + 1;
+                    }
+                }
+            }
+
+            return sizes.Count == 0 ? "none" : string.Join(" ", sizes.Select(kv => $"{kv.Key}:{kv.Value}"));
+        }
+
         public string Report(long ticks) =>
             $"{Name}_records={Records}\n" +
             $"{Name}_distinct_sequences={Distinct}\n" +
@@ -61,11 +85,40 @@ public sealed class LoadScenarioTests
             $"{Name}_loop_overruns={Loops.Sum(l => l.LoopOverruns)}\n" +
             $"{Name}_buffer_drops={Buffers.Sum(b => b.DroppedTotal)}\n" +
             $"{Name}_egress_failures={Loops.Sum(l => l.EgressFailures)}\n" +
+            $"{Name}_gap_sizes={GapSizes()}\n" +
+            (OpcUaSources.Count == 0 ? "" :
+                $"{Name}_incomplete_groups_dropped={OpcUaSources.Sum(s => s.Subscription?.IncompleteGroupsDropped ?? 0)}\n" +
+                $"{Name}_late_values_discarded={OpcUaSources.Sum(s => s.Subscription?.LateValuesDiscarded ?? 0)}\n") +
             $"{Name}_last_failure={Loops.Select(l => l.LastFailure).FirstOrDefault(f => f is not null) ?? "none"}\n";
     }
 
-    private sealed record RunResult(ProtocolRun Run, long Ticks, TimeSpan Elapsed)
+    private sealed record RunResult(
+        ProtocolRun Run, long Ticks, TimeSpan Elapsed, long Bursts, TimeSpan LongestStepGap, IReadOnlyList<DateTimeOffset> BurstTimes)
     {
+        /// <summary>
+        /// Whether the gaps line up with the model clock's bursts. A gap within 3 s after a burst is
+        /// consistent with §1.3's "steps closer than the sampling interval are not all sampled"; a gap
+        /// with no burst near it is not, and would be the subscription losing data.
+        /// </summary>
+        public string Clock(string name)
+        {
+            var gapTimes = Run.Sinks
+                .SelectMany(s => s.Records)
+                .Where(r => r.HasFlag(Channel.Event, QualityFlag.SequenceGap))
+                .Select(r => r.IngestTimeUtc)
+                .ToList();
+
+            var nearBurst = gapTimes.Count(g => BurstTimes.Any(b => b <= g && g - b < TimeSpan.FromSeconds(3)));
+            var start = gapTimes.Count > 0 ? gapTimes.Min() : DateTimeOffset.UtcNow;
+
+            return
+                $"{name}_model_clock_bursts={Bursts}\n" +
+                $"{name}_longest_step_gap_ms={LongestStepGap.TotalMilliseconds:F0}\n" +
+                $"{name}_gaps_within_3s_after_a_burst={nearBurst}/{gapTimes.Count}\n" +
+                $"{name}_first_gap_times_utc={string.Join(" ", gapTimes.Order().Take(8).Select(t => t.ToString("HH:mm:ss.fff")))}\n" +
+                $"{name}_first_burst_times_utc={string.Join(" ", BurstTimes.Take(8).Select(t => t.ToString("HH:mm:ss.fff")))}\n";
+        }
+
         public DateTimeOffset WarmedUpAt =>
             Run.Sinks.Max(s => s.Records.Count > 0 ? s.Records[0].IngestTimeUtc : DateTimeOffset.MaxValue) + WarmUpMargin;
     }
@@ -144,6 +197,10 @@ public sealed class LoadScenarioTests
         await stopping.CancelAsync();
         await Task.WhenAll(running.Append(clock));
 
+        // Read before the sources are disposed below, which drops their subscriptions.
+        run = run with { OpcUaSources = opcUaSources };
+        var report = run.Report(ticks);
+
         foreach (var source in opcUaSources)
         {
             await source.DisposeAsync();
@@ -160,7 +217,8 @@ public sealed class LoadScenarioTests
         }
 
         LiveRig.DeleteQuietly(pki);
-        return new RunResult(run, ticks, elapsed);
+        return new RunResult(
+            run with { Snapshot = report }, ticks, elapsed, equipment.Bursts, equipment.LongestStepGap, equipment.BurstTimes);
     }
 
     /// <summary>
@@ -242,11 +300,13 @@ public sealed class LoadScenarioTests
             $"equipment={EquipmentCount}\n" +
             $"modbus_elapsed_seconds={modbus.Elapsed.TotalSeconds:F1}\n" +
             $"modbus_model_ticks={modbus.Ticks}\n" +
-            modbus.Run.Report(modbus.Ticks) +
+            modbus.Run.Snapshot +
+            modbus.Clock("modbus") +
             $"opcua_elapsed_seconds={opcUa.Elapsed.TotalSeconds:F1}\n" +
             $"opcua_model_ticks={opcUa.Ticks}\n" +
             $"opcua_warm_up_seconds={(opcUa.WarmedUpAt - WarmUpMargin - opcUa.Run.Sinks.Min(s => s.Records.Count > 0 ? s.Records[0].IngestTimeUtc : DateTimeOffset.MaxValue)).TotalSeconds:F1}\n" +
-            opcUa.Run.Report(opcUa.Ticks);
+            opcUa.Run.Snapshot +
+            opcUa.Clock("opcua");
 
         var path = Environment.GetEnvironmentVariable("MAIR_LOAD_OUTPUT");
         if (!string.IsNullOrWhiteSpace(path))
@@ -262,5 +322,24 @@ public sealed class LoadScenarioTests
 
         AssertEmitsCanonical(opcUa.Run, SourceProtocol.OpcUa);
         AssertNoGapsAfterWarmUp(opcUa.Run, opcUa.WarmedUpAt);
+    }
+
+    /// <summary>
+    /// Diagnostic, not LOAD-001: the OPC UA half alone, under <c>MAIR_LOAD_DIAGNOSE=opcua</c>. Used to
+    /// find where the first LOAD-001 run's 35 OPC UA gaps came from without re-running Modbus.
+    /// </summary>
+    [SkippableFact]
+    public async Task Load001Diagnostic_OpcUaOnly()
+    {
+        Skip.IfNot(Environment.GetEnvironmentVariable("MAIR_LOAD_DIAGNOSE") == "opcua", "diagnostic only");
+
+        var opcUa = await RunAsync(Path2.OpcUa, LoadDuration);
+        var summary = $"opcua_model_ticks={opcUa.Ticks}\n" + opcUa.Run.Snapshot + opcUa.Clock("opcua");
+
+        var path = Environment.GetEnvironmentVariable("MAIR_LOAD_OUTPUT");
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            await File.WriteAllTextAsync(path, summary);
+        }
     }
 }

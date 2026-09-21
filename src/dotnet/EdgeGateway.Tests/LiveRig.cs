@@ -45,6 +45,18 @@ internal sealed class LiveEquipment : Protocols.IEquipmentAccess
 
     public long TicksApplied { get; private set; }
 
+    /// <summary>
+    /// Steps issued less than one OPC UA sampling interval (50 ms) after the previous one - the clock
+    /// catching up after a stall. §1.3: such steps cannot all be sampled, so a gap there is the rig's
+    /// burst being detected, not the subscription losing data.
+    /// </summary>
+    public long Bursts { get; private set; }
+
+    public TimeSpan LongestStepGap { get; private set; }
+
+    /// <summary>When each burst step was issued, so a gap can be checked against the bursts around it.</summary>
+    public List<DateTimeOffset> BurstTimes { get; } = [];
+
     /// <summary>One model step for every equipment. Driven by <see cref="RunClockAsync"/>, not a timer here.</summary>
     public void Tick()
     {
@@ -84,14 +96,41 @@ internal sealed class LiveEquipment : Protocols.IEquipmentAccess
         => Task.Run(async () =>
         {
             var next = Stopwatch.GetTimestamp();
+            long? previous = null;
             while (!cancellationToken.IsCancellationRequested)
             {
+                var now = Stopwatch.GetTimestamp();
+                if (previous is { } p)
+                {
+                    var spacing = Stopwatch.GetElapsedTime(p, now);
+                    if (spacing < TimeSpan.FromMilliseconds(50))
+                    {
+                        Bursts++;
+                        BurstTimes.Add(DateTimeOffset.UtcNow);
+                    }
+
+                    if (spacing > LongestStepGap)
+                    {
+                        LongestStepGap = spacing;
+                    }
+                }
+
+                previous = now;
                 Tick();
                 publish()?.NodeManager.RefreshAll();
 
                 next += (long)(Stopwatch.Frequency * 0.1);
                 var wait = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), next);
-                if (wait > TimeSpan.Zero)
+                if (wait <= TimeSpan.Zero)
+                {
+                    // Late: re-anchor rather than catch up. Catching up issued steps a millisecond
+                    // apart after every stall, which no machine does, and which §1.3 says the 50 ms
+                    // sampling cannot all see. The first LOAD-001 run failed on exactly that: 60 of
+                    // 60 OPC UA gaps fell within 3 s of such a burst, with nothing dropped by the
+                    // gateway. The gateway's own poll loop re-anchors for the same reason.
+                    next = Stopwatch.GetTimestamp();
+                }
+                else
                 {
                     try
                     {

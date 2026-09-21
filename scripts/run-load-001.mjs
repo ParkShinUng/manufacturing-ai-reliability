@@ -65,6 +65,9 @@ try {
   run("dotnet", [
     "test", "src/dotnet/EdgeGateway.Tests/Mair.EdgeGateway.Tests.csproj",
     "--nologo", "-v", "q",
+    // Quiet build, but the failing assertion's message must reach the report: a red result with no
+    // reason in it is a report nobody can act on.
+    "--logger", "console;verbosity=normal",
     "--filter", "FullyQualifiedName~Load001_TwentyEquipmentAtTenHertz",
     "-e", "MAIR_LOAD_TEST=1",
     "-e", `MAIR_LOAD_SECONDS=${seconds}`,

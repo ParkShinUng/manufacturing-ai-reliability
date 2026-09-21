@@ -290,6 +290,26 @@ at twenty, OD-006 was a second cause.
 OPC UA coverage counts from the first model step, so it includes the seconds twenty sessions take
 to connect. That is start-up, not loss — the gap count after warm-up is the loss figure.
 
+**First official run, 2026-09-21 — FAILED, diagnosed, rig corrected.** Modbus passed (0 read
+failures, every one of 66 skips flagged). OPC UA reported **35 gaps** after warm-up against a
+requirement of zero. A 30-minute OPC UA-only diagnostic reproduced it with 60 gaps and showed the
+cause:
+
+| | |
+|---|---|
+| gaps within 3 s after a model-clock burst | **60 / 60** |
+| steps the gateway's assembler dropped | 0 |
+| late values discarded | 0 |
+| longest model-clock stall | 2 049 ms |
+
+The rig's model clock caught up after each stall by issuing steps about a millisecond apart. §1.3
+states that steps closer than the 50 ms sampling interval cannot all be sampled, and every gap sat
+on such a burst. The subscription lost nothing it could have seen. No machine emits a burst of
+catch-up steps, so the rig now **re-anchors** after a stall, as the gateway's poll loop does. The
+requirement was not relaxed. The run is repeated on the corrected rig, and the report records
+`model_clock_bursts`, `longest_step_gap_ms` and gap-to-burst correlation, so a recurrence is
+attributable from the report alone.
+
 ## 5a. Phase 1 unit tests — implemented
 
 `src/dotnet/EquipmentSimulator.Tests/` (44 tests, `dotnet test src/dotnet/Mair.sln`).
