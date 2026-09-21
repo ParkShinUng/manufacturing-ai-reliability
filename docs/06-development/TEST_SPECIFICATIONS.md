@@ -105,6 +105,12 @@ not part of gateway reconnect (OD-003); its loss is a control-path failure, not 
 **with no process restart** · `reconnect_total` increases · telemetry resumes · `SEQUENCE_GAP`
 raised for the gap.
 
+**Automated 2026-09-21** — `EndpointOutageTests`, both protocols, real servers torn down and rebuilt
+on the same port while the model clock keeps stepping. The outage is **10 s**, not 30: the reconnect
+bound is set by the backoff, which reaches its 8 s cap (±20 %) after 7.75 s of failures, so any
+longer outage exercises the same worst case. In Phase 2 the `OFFLINE` observable is
+`protocol_connected`; the `factory.equipment-states.v1` record is bound with the egress in Phase 3.
+
 ### FAIL-DATA-001 — stale telemetry → AC-005
 **Trigger:** freeze telemetry for 5 s while the Supervisor remains up.
 **Assert:** rejection with `TELEMETRY_STALE` · mode → `SAFE_FALLBACK` · no command applied from
@@ -177,6 +183,11 @@ keys present on every record (nullable, but present) · `equipmentId`, `eventTim
 **zero unhandled exceptions** · `local_buffer_depth` bounded · `telemetry_dropped_total == 0` with
 a healthy sink.
 
+Proven in two halves. `SustainedEmissionTests` covers the 30 minutes and all 360 000 records
+in-process, the simulator being tick-driven. `LoadScenarioTests.Ac001_*` runs the same assertions on
+every record through the **real** servers, clients and poll loops, per protocol, for a few seconds
+in every suite run (COD-P2-006); the 30 wall-clock minutes on that path are `LOAD-001`.
+
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
 **Trigger:** collect paired samples over 5 minutes across the full rate range, including a slew.
@@ -185,6 +196,10 @@ a healthy sink.
 channel's documented resolution** (`EQUIPMENT_MODEL_AND_STATE.md` §1.2: 0.1 rpm, 0.1 N·m, 0.01 A,
 0.1 V, 0.1 °C, 0.01 mm/s, 0.1 %) · the 32-bit fields decode **high word first** · `sourceEpochMs`
 read across `+20/+21` matches the OPC UA value · `statusBitmap` at `+22` is read and matches.
+
+Asserted on **both** OPC UA routes — the batch read and the §1.3 subscription the gateway ships
+(COD-P2-005). They share the frame builder but reach it through different machinery, so agreement
+on one is not evidence about the other.
 
 This is the test that catches scaling and word-order errors, which is why it compares engineering
 values rather than raw registers: a word-order mistake in a scaled integer produces a plausible
@@ -262,6 +277,19 @@ Coverage is a **measurement**, not a threshold. Setting a number before understa
 platform does on a representative deployment profile would be inventing a target, and a developer
 laptop is not that profile.
 
+**Run per protocol, one after the other** (amended 2026-09-21, COD-P2-007). Both in one process
+measured the rig — forty loops and twenty sessions on one laptop halved the achieved poll rate —
+and a gateway reads each machine over one protocol anyway. OPC UA warm-up is **measured**: the
+zero-gap window opens 1 s after the last loop's first record, not after a fixed allowance.
+
+The Modbus "zero read failures" requirement failed at 20 equipment until **OD-006** replaced the
+NModbus client, whose reads blocked a pool thread each; it passes on the async reader with the
+pool at its default size. The "no other defect needed to explain it" above held at one equipment;
+at twenty, OD-006 was a second cause.
+
+OPC UA coverage counts from the first model step, so it includes the seconds twenty sessions take
+to connect. That is start-up, not loss — the gap count after warm-up is the loss figure.
+
 ## 5a. Phase 1 unit tests — implemented
 
 `src/dotnet/EquipmentSimulator.Tests/` (44 tests, `dotnet test src/dotnet/Mair.sln`).
@@ -281,6 +309,22 @@ laptop is not that profile.
 The determinism suite deliberately contains a **negative** case: without
 `DifferentSeed_ProducesDifferentTelemetry`, an implementation that emitted no noise at all would
 satisfy PROP-03 trivially.
+
+## 5b. Phase 2 tests — implemented
+
+`src/dotnet/EdgeGateway.Tests/`.
+
+| File | Proves |
+|---|---|
+| `SustainedEmissionTests.cs`, `LoadScenarioTests.cs` | **AC-001** — in-process over 30 simulated minutes, and on the real protocol path per protocol; `LOAD-001` |
+| `EndpointOutageTests.cs` | **AC-002** — `FAIL-OT-001` on both protocols with real endpoints |
+| `PollLoopTests.cs` | **AC-002** — reconnect without restart, backoff, and egress failures isolated from protocol health |
+| `ModbusFramingTests.cs` | the gateway's FC04 reader (OD-006) against a misbehaving server: request framing, trickled bytes, every malformed-response case, exception PDUs, timeouts, and a late answer that must never be read as the next reply |
+| `CrossProtocolTests.cs` | **AC-021** — on the batch read and the subscription |
+| `NormalisationTests.cs`, `QualityDerivationTests.cs` | **AC-022** — null plus a flag, never a substitute; `quality.overall` for every flag combination |
+| `SequenceEpochMatrixTests.cs`, `NormalisationTests.cs` | **AC-023** — the five-case paired-signal matrix on both protocols |
+| `OpcUaSampleAssemblerTests.cs`, `OpcUaSampleCoherenceTests.cs` | the §1.3 assembly rule: deterministic uneven queues, straddles, discards and late values, then the same over the wire at 120, 60 and 20 ms steps; §1.4 status translation reaching the event |
+| `PollVsSubscribeTests.cs` | the OD-005 measurement |
 
 ## 6. Property-based tests
 

@@ -301,3 +301,99 @@ Coverage was measured; **atomicity was not**. The subscription assembles a sampl
 could pair a marker from tick N with a measurement from N-1. Codex flagged it, and
 `OpcUaSampleCoherenceTests` now checks that changing nodes carry the marker's own source epoch,
 leaving stable nodes such as `State` as latest-known.
+
+**Superseded 2026-09-21 by the Phase 2 verification (COD-P2-001).** The per-cycle k-th-value
+pairing that replaced it assumed every item queued the same number of values per cycle, which OPC
+UA does not guarantee. The subscription now uses the `StatusValueTimestamp` trigger, so every node
+reports on every step, and assembles a sample from exactly the ten values that share the marker's
+source timestamp (`OT_PROTOCOL_MAPPING.md` §1.3). Nothing is inferred about a silent node any more.
+
+The Modbus half of this decision also needs a caveat. At **one** equipment the loss is the phase
+drift described above. At **twenty**, a second cause was found — see OD-006 — and the 20-equipment
+Modbus numbers taken before it is resolved measure that defect as much as the protocol.
+
+---
+
+# OD-006 — RESOLVED 2026-09-21 — option B — the NModbus client blocks a thread-pool thread per read, and twenty loops starve the pool
+
+> **Decision: B**, by the product owner, after Claude and Codex both recommended it. The gateway's
+> Modbus client is an in-repository async FC04 reader; NModbus stays on the simulator's server.
+> `ADR-0020` is amended accordingly.
+>
+> Raised 2026-09-21 by the Phase 2 verification. **Major dependency** and **concurrency** are both
+> on the mandatory Codex participation list (`DUAL_AGENT_PROTOCOL.md` §2), and the options below
+> change what ADR-0020 selected, so this is the product owner's decision.
+
+## How it surfaced
+
+Codex required `LOAD-001` to assert per protocol (COD-P2-007). Run for 20 s with 20 equipment,
+Modbus alone, the "zero read failures on a healthy run" assertion failed: 12 of 3 950 reads hit the
+250 ms response timeout (§2.7), with 20 loop overruns, 325 gaps and 90 % coverage. The new
+real-path AC-001 test fails intermittently for the same reason when the suite runs in parallel.
+
+## Cause — confirmed, not inferred
+
+NModbus 3.0.83's `ReadInputRegistersAsync` is not asynchronous. Decompiled:
+
+```csharp
+private Task<ushort[]> PerformReadRegistersAsync(ReadHoldingInputRegistersRequest request)
+{
+    return Task.Factory.StartNew(() => PerformReadRegisters(request));   // a blocking socket read
+}
+```
+
+Every read parks a thread-pool thread in a synchronous receive. Twenty loops at 10 Hz outrun the
+pool's injection rate, the timers that drive the loops queue behind the blocked threads, and reads
+time out. The simulator's side (`ModbusMasterTcpConnection.HandleRequestAsync`) is genuinely async
+and is not involved.
+
+The same 20 s run with the pool's minimum raised to 64 threads:
+
+| | default pool | min 64 threads |
+|---|---|---|
+| read failures | **12** | **0** |
+| loop overruns | 20 | 0 |
+| sequence gaps | 325 | 38 |
+| coverage | 90.0 % | 99.1 % |
+
+A timeout is also worse than it looks: `WaitAsync` abandons the task, not the read. The blocked
+thread stays parked on the socket until the loop reconnects and disposes it, and the response it was
+waiting for would have been read as the answer to the **next** request had the loop not reconnected.
+
+## Options
+
+| | Option | Cost | Ceiling |
+|---|---|---|---|
+| **A** | `ThreadPool.SetMinThreads` sized to the Modbus loop count at gateway start | one line, no dependency change | one pool thread per in-flight read; at LOAD-002's 250 equipment the pool is sized for 250 blocked readers, and a slow endpoint holds each for the full timeout |
+| **B** | Replace the NModbus **client** with a small, genuinely async FC04 reader (MBAP header, one request, one response, exception PDU → error); keep NModbus for the simulator's server | ~60 lines of protocol code; ADR-0020 amended to "server only" | the reader is hand-written, but `CrossProtocolTests` checks it against an independent implementation — NModbus serving, OPC UA typed values |
+| **C** | One dedicated thread per Modbus connection, calling NModbus's synchronous API | a small per-connection worker | a thread per equipment by design; 250 threads at LOAD-002 |
+
+**Recommendation: B.** It is the only option that removes the blocking rather than provisioning
+for it, a cancelled read closes its own socket so no stale response can survive, and the gateway
+loses a dependency instead of gaining a workaround. A is acceptable as an interim if B is deferred.
+
+**Codex, round 2 (COD-P2-R2-002):** confirmed the cause independently by decompiling NModbus, and
+takes **B**: "Option A is acceptable only as an interim mitigation; Option C preserves the
+thread-per-connection ceiling." Agreement between the agents is input, not the decision.
+
+## After — measured, default thread pool
+
+The same 20 s, 20-equipment run on the new reader, with the pool left at its default size:
+
+| | NModbus, default pool | NModbus, min 64 threads | **async reader, default pool** |
+|---|---|---|---|
+| read failures | 12 | 0 | **0** |
+| loop overruns | 20 | 0 | **0** |
+| sequence gaps | 325 | 38 | **0** |
+| coverage | 90.0 % | 99.1 % | **100.0 %** |
+
+One run, on a laptop, is not a performance claim (NFR-005): coverage is phase-dependent (OD-005)
+and this run happened to land well. What it does show is that the defect is gone without sizing
+anything around it. The 30-minute `LOAD-001` run is what reports the figure.
+
+## Before it was resolved
+
+The Modbus AC-001 real-path test and the Modbus half of `LOAD-001` measured this defect, and were
+left **failing when they failed** rather than relaxed: a test weakened to pass around a known defect
+is the silent loss D-03 forbids, moved into the test suite. They are the tests that now have to
+pass on the new reader, unchanged.

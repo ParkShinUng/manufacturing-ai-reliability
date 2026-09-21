@@ -19,8 +19,97 @@ public sealed record OpcUaFrame
 
     public required EquipmentState State { get; init; }
 
-    /// <summary>OPC UA <c>SourceTimestamp</c>. Authoritative here, unlike Modbus (§2.6).</summary>
-    public required DateTimeOffset SourceTimeUtc { get; init; }
+    /// <summary>
+    /// OPC UA <c>SourceTimestamp</c>. Authoritative here, unlike Modbus (§2.6). <c>null</c> when the
+    /// server sent none: the normaliser then synthesises it and raises <c>TIMESTAMP_SYNTHESISED</c>
+    /// (§1.5) rather than passing the gateway clock off as the source clock.
+    /// </summary>
+    public required DateTimeOffset? SourceTimeUtc { get; init; }
+
+    /// <summary>The ten node identifiers a frame is built from, in the order <see cref="From"/> expects.</summary>
+    internal static readonly string[] NodeIdentifiers =
+    [
+        "Rpm", "TorqueNm", "CurrentA", "VoltageV", "TemperatureC", "VibrationRms", "OperationRatePct",
+        "State", "SequenceNo", "SourceEpochMs",
+    ];
+
+    private static readonly Channel[] Measurements =
+    [
+        Channel.Rpm, Channel.TorqueNm, Channel.CurrentA, Channel.VoltageV,
+        Channel.TemperatureC, Channel.VibrationRms, Channel.OperationRatePct,
+    ];
+
+    /// <summary>
+    /// Builds a frame from one value per node, ordered as <see cref="NodeIdentifiers"/>. Both the batch
+    /// read and the subscription go through here, so their §1.4 translation cannot diverge.
+    /// </summary>
+    internal static OpcUaFrame From(IReadOnlyList<DataValue> values)
+    {
+        var readings = new Dictionary<Channel, double?>();
+        var flags = new List<ChannelFlag>();
+
+        for (var i = 0; i < Measurements.Length; i++)
+        {
+            readings[Measurements[i]] = Translate(Measurements[i], values[i], flags);
+        }
+
+        var sequence = values[8];
+
+        return new OpcUaFrame
+        {
+            Values = readings,
+            StatusFlags = flags,
+            State = StateFrom(Convert.ToUInt16(values[7].Value ?? (ushort)0)),
+            Sequence = Convert.ToUInt64(sequence.Value ?? 0UL),
+            SourceEpochMs = Convert.ToUInt32(values[9].Value ?? 0u),
+            SourceTimeUtc = sequence.SourceTimestamp == DateTime.MinValue
+                ? null
+                : new DateTimeOffset(sequence.SourceTimestamp, TimeSpan.Zero),
+        };
+    }
+
+    /// <summary>
+    /// §1.4 status translation. A <c>Bad_*</c> status yields <c>null</c> — the value is discarded,
+    /// not carried with a warning, because a bad reading that reaches the gates is worse than none.
+    /// </summary>
+    private static double? Translate(Channel channel, DataValue value, List<ChannelFlag> flags)
+    {
+        var status = value.StatusCode;
+
+        if (StatusCode.IsBad(status))
+        {
+            flags.Add(new ChannelFlag(channel, status.Code switch
+            {
+                StatusCodes.BadNoCommunication => QualityFlag.SensorDisconnected,
+                _ => QualityFlag.SensorMissing, // Bad_OutOfService, Bad_SensorFailure, and the rest
+            }));
+
+            return null;
+        }
+
+        if (StatusCode.IsUncertain(status))
+        {
+            flags.Add(new ChannelFlag(channel, QualityFlag.StaleReading));
+        }
+        else if (status.Code == StatusCodes.GoodLocalOverride)
+        {
+            flags.Add(new ChannelFlag(channel, QualityFlag.OutlierSuspected));
+        }
+
+        return value.Value is null ? null : Convert.ToDouble(value.Value);
+    }
+
+    private static EquipmentState StateFrom(ushort code) => code switch
+    {
+        0 => EquipmentState.Offline,
+        1 => EquipmentState.Connecting,
+        2 => EquipmentState.Idle,
+        3 => EquipmentState.Running,
+        4 => EquipmentState.Degraded,
+        5 => EquipmentState.Fault,
+        6 => EquipmentState.Stopping,
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, "unknown equipment state code (§3)"),
+    };
 }
 
 /// <summary>
@@ -35,17 +124,6 @@ public sealed class OpcUaTelemetryClient : IAsyncDisposable
 {
     /// <summary>Resolved by URI at session start. Hard-coding index 2 is the single most common OPC UA defect (§1.1).</summary>
     public const string NamespaceUri = "urn:mair:equipment:v1";
-
-    private static readonly Channel[] Measurements =
-    [
-        Channel.Rpm, Channel.TorqueNm, Channel.CurrentA, Channel.VoltageV,
-        Channel.TemperatureC, Channel.VibrationRms, Channel.OperationRatePct,
-    ];
-
-    private static readonly string[] MeasurementIdentifiers =
-    [
-        "Rpm", "TorqueNm", "CurrentA", "VoltageV", "TemperatureC", "VibrationRms", "OperationRatePct",
-    ];
 
     private readonly string _endpointUrl;
     private readonly string? _pkiRoot;
@@ -129,92 +207,17 @@ public sealed class OpcUaTelemetryClient : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(equipmentId);
         var session = _session ?? throw new InvalidOperationException("not connected");
 
-        var nodeIds = new List<NodeId>();
-        foreach (var identifier in MeasurementIdentifiers)
-        {
-            nodeIds.Add(NodeOf(equipmentId, identifier));
-        }
-
-        nodeIds.Add(NodeOf(equipmentId, "State"));
-        nodeIds.Add(NodeOf(equipmentId, "SequenceNo"));
-        nodeIds.Add(NodeOf(equipmentId, "SourceEpochMs"));
-
-        // One batch read, not eleven round trips: the whole point of the block read on the Modbus
+        // One batch read, not ten round trips: the whole point of the block read on the Modbus
         // side applies here too - a sample assembled from separate reads can straddle two model
         // steps and be physically inconsistent.
+        var nodeIds = OpcUaFrame.NodeIdentifiers.Select(identifier => NodeOf(equipmentId, identifier)).ToList();
         var (values, _) = await session.ReadValuesAsync(nodeIds, cancellationToken);
 
-        var readings = new Dictionary<Channel, double?>();
-        var flags = new List<ChannelFlag>();
-        var sourceTime = DateTimeOffset.MinValue;
-
-        for (var i = 0; i < Measurements.Length; i++)
-        {
-            var value = values[i];
-            readings[Measurements[i]] = Translate(Measurements[i], value, flags);
-
-            if (value.SourceTimestamp > sourceTime.UtcDateTime)
-            {
-                sourceTime = new DateTimeOffset(value.SourceTimestamp, TimeSpan.Zero);
-            }
-        }
-
-        return new OpcUaFrame
-        {
-            Values = readings,
-            StatusFlags = flags,
-            State = StateFrom(Convert.ToUInt16(values[^3].Value ?? (ushort)0)),
-            Sequence = Convert.ToUInt64(values[^2].Value ?? 0UL),
-            SourceEpochMs = Convert.ToUInt32(values[^1].Value ?? 0u),
-            SourceTimeUtc = sourceTime == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : sourceTime,
-        };
-    }
-
-    /// <summary>
-    /// §1.4 status translation. A <c>Bad_*</c> status yields <c>null</c> — the value is discarded,
-    /// not carried with a warning, because a bad reading that reaches the gates is worse than none.
-    /// </summary>
-    private static double? Translate(Channel channel, DataValue value, List<ChannelFlag> flags)
-    {
-        var status = value.StatusCode;
-
-        if (StatusCode.IsBad(status))
-        {
-            flags.Add(new ChannelFlag(channel, status.Code switch
-            {
-                StatusCodes.BadNoCommunication => QualityFlag.SensorDisconnected,
-                _ => QualityFlag.SensorMissing, // Bad_OutOfService, Bad_SensorFailure, and the rest
-            }));
-
-            return null;
-        }
-
-        if (StatusCode.IsUncertain(status))
-        {
-            flags.Add(new ChannelFlag(channel, QualityFlag.StaleReading));
-        }
-        else if (status.Code == StatusCodes.GoodLocalOverride)
-        {
-            flags.Add(new ChannelFlag(channel, QualityFlag.OutlierSuspected));
-        }
-
-        return value.Value is null ? null : Convert.ToDouble(value.Value);
+        return OpcUaFrame.From(values);
     }
 
     private NodeId NodeOf(string equipmentId, string identifier)
         => new($"Eq.{equipmentId}.{identifier}", _namespaceIndex);
-
-    private static EquipmentState StateFrom(ushort code) => code switch
-    {
-        0 => EquipmentState.Offline,
-        1 => EquipmentState.Connecting,
-        2 => EquipmentState.Idle,
-        3 => EquipmentState.Running,
-        4 => EquipmentState.Degraded,
-        5 => EquipmentState.Fault,
-        6 => EquipmentState.Stopping,
-        _ => throw new ArgumentOutOfRangeException(nameof(code), code, "unknown equipment state code (§3)"),
-    };
 
     private static async Task<EndpointDescription> SelectEndpointAsync(
         ApplicationConfiguration configuration, string url, CancellationToken cancellationToken)

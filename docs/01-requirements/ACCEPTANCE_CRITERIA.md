@@ -36,6 +36,8 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   wrap — where `sequence` and `sourceEpochMs` reset **together** — is a new epoch, not a gap, and is
   not reported as one. Either signal resetting **alone** is a gap. Both protocols must agree, which
   is why OPC UA now carries `SourceEpochMs`.
+  *Phase 2 proves the counter, not its export:* `telemetry_sequence_gaps_total` is the in-process
+  `TelemetryNormaliser.SequenceGaps` until the Phase 8 exporter exists (`EDGE_GATEWAY.md` §17).
 
   *Amended 2026-09-21 by OD-005, on measurement.* This is a **detection** criterion, and what
   counts as achievable prevention differs by protocol:

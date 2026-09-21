@@ -10,7 +10,11 @@ public interface ITelemetrySource
 
     Task ConnectAsync(CancellationToken cancellationToken);
 
-    Task<CanonicalTelemetry> ReadAsync(CancellationToken cancellationToken);
+    /// <summary>
+    /// Everything the source has produced since the last call. A poll yields exactly one record; a
+    /// subscription yields however many the server delivered, including none.
+    /// </summary>
+    Task<IReadOnlyList<CanonicalTelemetry>> ReadAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -80,6 +84,15 @@ public sealed class EquipmentPollLoop
     public string? LastFailure { get; private set; }
 
     /// <summary>
+    /// Records the sink refused - <c>telemetry_publish_errors_total</c>. Kept apart from protocol
+    /// health on purpose: a failing sink is an egress fault, and letting it mark the equipment
+    /// OFFLINE and back off would make the analytics path throttle OT sampling (section 4, COD-P2-008).
+    /// </summary>
+    public long EgressFailures { get; private set; }
+
+    public string? LastEgressFailure { get; private set; }
+
+    /// <summary>
     /// Runs until cancelled. Exits only on cancellation — every other failure is a protocol fault
     /// to recover from, not a reason to stop polling.
     /// </summary>
@@ -96,9 +109,11 @@ public sealed class EquipmentPollLoop
 
             try
             {
-                var telemetry = await _source.ReadAsync(cancellationToken);
-                _buffer.Enqueue(telemetry);
-                Drain();
+                foreach (var telemetry in await _source.ReadAsync(cancellationToken))
+                {
+                    _buffer.Enqueue(telemetry);
+                }
+
                 PollsCompleted++;
 
                 // Reset here, not on connect. An endpoint that accepts connections but fails every
@@ -125,6 +140,8 @@ public sealed class EquipmentPollLoop
                 continue;
             }
 
+            // Outside the protocol try: nothing the sink does can reach ProtocolConnected.
+            Drain();
             await WaitForNextTickAsync(cancellationToken);
         }
     }
@@ -155,9 +172,23 @@ public sealed class EquipmentPollLoop
     {
         // Draining here rather than on a second thread keeps the ordering guarantee simple: the
         // buffer is written and read by the same loop, so there is no interleaving to reason about.
-        while (_buffer.TryDequeue(out var telemetry) && telemetry is not null)
+        //
+        // Peek, emit, then dequeue: a record the sink refused stays buffered for the next cycle, and
+        // if the sink stays down, drop-oldest bounds the loss and reports it (D-02).
+        while (_buffer.TryPeek(out var telemetry) && telemetry is not null)
         {
-            _sink.Emit(telemetry);
+            try
+            {
+                _sink.Emit(telemetry);
+            }
+            catch (Exception ex)
+            {
+                EgressFailures++;
+                LastEgressFailure = $"{ex.GetType().Name}: {ex.Message}";
+                return;
+            }
+
+            _buffer.TryDequeue(out _);
         }
     }
 
@@ -221,11 +252,15 @@ public sealed class ModbusTelemetrySource(
 
     public Task ConnectAsync(CancellationToken cancellationToken) => client.ConnectAsync(cancellationToken);
 
-    public async Task<CanonicalTelemetry> ReadAsync(CancellationToken cancellationToken)
-        => normaliser.Normalise(await client.ReadAsync(equipmentIndex, cancellationToken));
+    public async Task<IReadOnlyList<CanonicalTelemetry>> ReadAsync(CancellationToken cancellationToken)
+        => [normaliser.Normalise(await client.ReadAsync(equipmentIndex, cancellationToken))];
 }
 
-/// <summary>Adapts the OPC UA client to <see cref="ITelemetrySource"/>.</summary>
+/// <summary>
+/// Adapts the OPC UA <b>batch read</b> to <see cref="ITelemetrySource"/>. Not the shipping path - that
+/// is <see cref="OpcUaSubscriptionTelemetrySource"/> - but kept because it is the direct way to read
+/// one node set on demand, and a diagnostic read should not need a subscription.
+/// </summary>
 public sealed class OpcUaTelemetrySource(
     string equipmentId,
     OpcUaTelemetryClient client,
@@ -235,10 +270,58 @@ public sealed class OpcUaTelemetrySource(
 
     public Task ConnectAsync(CancellationToken cancellationToken) => client.ConnectAsync(cancellationToken);
 
-    public async Task<CanonicalTelemetry> ReadAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<CanonicalTelemetry>> ReadAsync(CancellationToken cancellationToken)
+        => [normaliser.Normalise(await client.ReadAsync(EquipmentId, cancellationToken))];
+}
+
+/// <summary>
+/// The OPC UA path the gateway ships: the section 1.3 subscription, drained by the loop on its 100 ms
+/// cadence (COD-P2-004). This is the path AC-023's "zero gaps after warm-up" is a claim about.
+/// </summary>
+public sealed class OpcUaSubscriptionTelemetrySource(
+    string equipmentId,
+    OpcUaTelemetryClient client,
+    TelemetryNormaliser normaliser) : ITelemetrySource, IAsyncDisposable
+{
+    private OpcUaSubscription? _subscription;
+
+    public string EquipmentId { get; } = equipmentId;
+
+    public OpcUaSubscription? Subscription => _subscription;
+
+    public async Task ConnectAsync(CancellationToken cancellationToken)
     {
-        var frame = await client.ReadAsync(EquipmentId, cancellationToken);
-        return normaliser.Normalise(
-            frame.Values, frame.Sequence, frame.SourceEpochMs, frame.State, frame.SourceTimeUtc);
+        await DisposeAsync();
+        await client.ConnectAsync(cancellationToken);
+        _subscription = await client.SubscribeAsync(EquipmentId, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<CanonicalTelemetry>> ReadAsync(CancellationToken cancellationToken)
+    {
+        var subscription = _subscription ?? throw new InvalidOperationException("not subscribed");
+
+        // A push path fails by going quiet, so silence has to be turned into a failure explicitly;
+        // otherwise a dead endpoint would look like an idle one and never reach OFFLINE.
+        if (!subscription.IsPublishing)
+        {
+            throw new InvalidOperationException("the subscription is not publishing: keep-alive lapsed or session lost");
+        }
+
+        var records = new List<CanonicalTelemetry>();
+        while (subscription.TryDequeue(out var frame) && frame is not null)
+        {
+            records.Add(normaliser.Normalise(frame));
+        }
+
+        return Task.FromResult<IReadOnlyList<CanonicalTelemetry>>(records);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_subscription is not null)
+        {
+            await _subscription.DisposeAsync();
+            _subscription = null;
+        }
     }
 }

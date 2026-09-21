@@ -75,6 +75,8 @@ public sealed class BoundedEgressBuffer
 
     public bool TryDequeue(out CanonicalTelemetry? telemetry) => _queue.TryDequeue(out telemetry);
 
+    public bool TryPeek(out CanonicalTelemetry? telemetry) => _queue.TryPeek(out telemetry);
+
     public IReadOnlyList<CanonicalTelemetry> DrainAll()
     {
         var drained = _queue.ToArray();

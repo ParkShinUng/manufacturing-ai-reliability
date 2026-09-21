@@ -184,6 +184,22 @@ here only so this design is readable on its own.
 Every label is a closed enum — `quality_flags_total` is bounded at 12 flags × 8 channels — and
 `equipmentId` is never a label (`CODING_STANDARDS.md`).
 
+**Phase 2 counts; Phase 8 exports.** The metrics contract, OTel instrumentation and the exporter
+are Phase 8 (`IMPLEMENTATION_PLAN.md`). Phase 2 keeps each counter in-process so the behaviour it
+measures is testable now, under the name it will be exported as (COD-P2-009):
+
+| Metric | Phase 2 counter |
+|---|---|
+| `protocol_connected` | `EquipmentPollLoop.ProtocolConnected` |
+| `reconnect_total` | `EquipmentPollLoop.ReconnectTotal` |
+| `telemetry_publish_errors_total` | `EquipmentPollLoop.EgressFailures` — kept apart from protocol health: a failing sink never marks equipment `OFFLINE` or backs off sampling (§4) |
+| `telemetry_dropped_total` | `BoundedEgressBuffer.DroppedTotal` |
+| `local_buffer_depth` | `BoundedEgressBuffer.Depth` |
+| `telemetry_sequence_gaps_total` | `TelemetryNormaliser.SequenceGaps` |
+
+`telemetry_events_total`, `quality_flags_total` and `clock_skew_seconds` are derivable from the
+emitted records and have no separate counter yet; they are Phase 8 work, not a Phase 2 gap.
+
 ## 18. Performance targets (TARGET — unmeasured)
 20 equipment × 10 Hz = 200 ev/s sustained; 250 equipment = 2 500 ev/s;
 P95 normalise+publish ≤ 20 ms; reconnect ≤ 10 s after endpoint restore.

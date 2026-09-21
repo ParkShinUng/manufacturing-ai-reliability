@@ -121,11 +121,76 @@ public sealed class CrossProtocolTests : IAsyncLifetime
         var opcUaFrame = await opcUaClient.ReadAsync("eq-001");
 
         var modbus = new TelemetryNormaliser("eq-001", "edge-gateway@modbus").Normalise(modbusFrame);
-        var opcUa = new TelemetryNormaliser("eq-001", "edge-gateway@opcua").Normalise(
-            opcUaFrame.Values, opcUaFrame.Sequence, opcUaFrame.SourceEpochMs,
-            opcUaFrame.State, opcUaFrame.SourceTimeUtc);
+        var opcUa = new TelemetryNormaliser("eq-001", "edge-gateway@opcua").Normalise(opcUaFrame);
 
         return (modbus, opcUa);
+    }
+
+    /// <summary>
+    /// The same comparison through the OPC UA <b>subscription</b>, the path the gateway ships
+    /// (COD-P2-005). The batch read and the subscription build their frames through the same code,
+    /// but they reach it by different routes - server sampling, queues, the per-cycle assembler - and
+    /// agreement on one route is not evidence about the other.
+    /// </summary>
+    private async Task<(CanonicalTelemetry Modbus, CanonicalTelemetry OpcUa)> ReadBothSubscribedAsync()
+    {
+        _opcUaServer.NodeManager.RefreshAll();
+
+        using var modbusClient = new ModbusTelemetryClient("127.0.0.1", _modbusServer.ActualReadOnlyPort);
+        await modbusClient.ConnectAsync();
+        var modbusFrame = await modbusClient.ReadAsync(0);
+
+        await using var opcUaClient = new OpcUaTelemetryClient(
+            _opcUaServer.EndpointUrl, Path.Combine(_pki, "gateway"));
+        await using var source = new OpcUaSubscriptionTelemetrySource(
+            "eq-001", opcUaClient, new TelemetryNormaliser("eq-001", "edge-gateway@opcua"));
+        await source.ConnectAsync(CancellationToken.None);
+
+        // The first publish carries every item's current value, which is the sample under test.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        IReadOnlyList<CanonicalTelemetry> records = [];
+        while (records.Count == 0)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "the subscription delivered nothing");
+            await Task.Delay(50);
+            records = await source.ReadAsync(CancellationToken.None);
+        }
+
+        var modbus = new TelemetryNormaliser("eq-001", "edge-gateway@modbus").Normalise(modbusFrame);
+        return (modbus, records[0]);
+    }
+
+    [Fact]
+    public async Task BothProtocolsProduceIdenticalEngineeringValues_OnTheSubscriptionPath()
+    {
+        var (modbus, opcUa) = await ReadBothSubscribedAsync();
+
+        foreach (var channel in Measurements)
+        {
+            Assert.NotNull(modbus[channel]);
+            Assert.NotNull(opcUa[channel]);
+            Assert.True(Math.Abs(modbus[channel]!.Value - opcUa[channel]!.Value) <= ResolutionOf(channel),
+                $"{channel}: Modbus {modbus[channel]} vs OPC UA {opcUa[channel]}");
+        }
+
+        Assert.Equal(modbus.Sequence, opcUa.Sequence);
+        Assert.Equal(modbus.EquipmentState, opcUa.EquipmentState);
+        Assert.True(opcUa.TorqueNm < 0, $"OPC UA torque was {opcUa.TorqueNm}");
+    }
+
+    [Fact]
+    public async Task ADeadSensorIsNullOnBothPaths_OnTheSubscriptionPath()
+    {
+        _equipment.Set(FakeEquipment.Sample(vibration: null));
+
+        var (modbus, opcUa) = await ReadBothSubscribedAsync();
+
+        Assert.Null(modbus.VibrationRms);
+        Assert.Null(opcUa.VibrationRms);
+        Assert.True(modbus.HasFlag(Channel.VibrationRms, QualityFlag.SensorMissing));
+        Assert.True(opcUa.HasFlag(Channel.VibrationRms, QualityFlag.SensorMissing));
+        Assert.Equal(QualityOverall.Bad, modbus.QualityOverall);
+        Assert.Equal(QualityOverall.Bad, opcUa.QualityOverall);
     }
 
     [Fact]

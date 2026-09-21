@@ -20,6 +20,16 @@ public sealed class MairNodeManager : CustomNodeManager2
     private readonly IReadOnlyList<string> _equipmentIds;
     private readonly Dictionary<string, EquipmentNodes> _nodes = [];
 
+    // The sample each equipment last published. One model step is published once: the gateway
+    // keys a sample on its SourceTimestamp, so re-stamping an unchanged sample would present one
+    // step as two. Compared by reference - a new model step is a new sample object.
+    private readonly Dictionary<string, RawSample> _published = [];
+
+    // The last SourceTimestamp stamped per equipment. Kept so each published step gets a strictly
+    // later one: two steps refreshed back to back can read the same clock value, and the gateway
+    // would then see one timestamp for two steps (COD-P2-R2-001).
+    private readonly Dictionary<string, DateTime> _stamped = [];
+
     public MairNodeManager(
         IServerInternal server,
         ApplicationConfiguration configuration,
@@ -194,10 +204,26 @@ public sealed class MairNodeManager : CustomNodeManager2
             }
 
             var sample = _equipment.Latest(nodes.Index);
+
+            if (sample is not null && _published.TryGetValue(equipmentId, out var last) && ReferenceEquals(last, sample))
+            {
+                return;
+            }
+
+            // One instant for every node of this step. The gateway assembles a sample from the ten
+            // values that share it, so this is the coherence key, not just a label.
             var now = DateTime.UtcNow;
+            if (_stamped.TryGetValue(equipmentId, out var previous) && now <= previous)
+            {
+                now = previous.AddTicks(1); // 100 ns, the resolution OPC UA DateTime carries
+            }
+
+            _stamped[equipmentId] = now;
 
             if (sample is null)
             {
+                _published.Remove(equipmentId);
+
                 // The equipment is not answering at all.
                 foreach (var node in All(nodes))
                 {
@@ -218,6 +244,7 @@ public sealed class MairNodeManager : CustomNodeManager2
             Set(nodes.SequenceNo, sample.Sequence, StatusCodes.Good, now);
             Set(nodes.SourceEpochMs, sample.SourceEpochMs, StatusCodes.Good, now);
             Set(nodes.RateSetpoint, sample.OperationRatePct ?? 0d, StatusCodes.Good, now);
+            _published[equipmentId] = sample;
         }
     }
 

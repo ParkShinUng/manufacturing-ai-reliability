@@ -55,7 +55,7 @@ const environment = {
 const summaryPath = join(root, "reports", "load", `.load-001-${Date.now()}.tmp`);
 mkdirSync(dirname(summaryPath), { recursive: true });
 
-console.log(`LOAD-001: 20 equipment at 100 ms for ${seconds}s (${(seconds / 60).toFixed(1)} min)`);
+console.log(`LOAD-001: 20 equipment at 100 ms for ${seconds}s per protocol, Modbus then OPC UA (~${((2 * seconds) / 60).toFixed(1)} min total)`);
 if (environment.dirty) {
   console.log("WARNING: the working tree is dirty; the commit alone will not reproduce this run.");
 }

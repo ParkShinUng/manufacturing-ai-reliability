@@ -80,8 +80,33 @@ The honest fix was to carry the same value the Modbus map already carries.
 | Queue size | 10 | absorbs one publish-cycle stall without loss |
 | Discard oldest | `true` | prefer fresh data; loss is flagged, not hidden |
 | Deadband | none (absolute 0) | a deadband would silently suppress `SENSOR_FROZEN` detection |
+| Data-change trigger | `StatusValueTimestamp` | every node reports on every model step, changed or not — see below |
 | Keep-alive count | 5 | ~500 ms silence detection |
 | Lifetime count | 15 | 3× keep-alive, per OPC UA convention |
+
+**Sample assembly (amended 2026-09-21, COD-P2-001).** The simulator stamps all ten nodes of one
+model step with one `SourceTimestamp`, and publishes each step exactly once. With the timestamp in
+the trigger, every node reports on every step, so a canonical sample is **exactly the ten values
+that share the `SequenceNo` value's source timestamp**. Nothing is inferred about a node that stayed
+silent, because none does.
+
+- A step whose values straddle a publishing cycle — items are sampled independently — completes in
+  the next cycle. An incomplete step is held for **2** cycles, then dropped and counted; its sequence
+  then surfaces downstream as `SEQUENCE_GAP`. It is never completed from another step's values.
+- Samples leave in order: a later complete step waits behind an earlier held one.
+- A value arriving after its step was emitted or dropped is discarded and counted, never attached to
+  a later sample.
+- A `SequenceNo` with a `Bad_*` status is not a sample: the equipment is not answering, and that
+  reaches the gateway through the session keep-alive.
+- The key must be unique per step, so the server stamps each equipment's steps **strictly
+  increasing** — a step that reads the same clock value as the previous one gets the next 100 ns
+  tick (COD-P2-R2-001). Two steps must never share a key, or one would overwrite the other.
+- "Zero gaps" assumes steps at least one sampling interval (50 ms) apart, which the 100 ms cadence
+  gives. Steps published closer together than that — a model clock catching up after a stall — are
+  not all sampled; the ones missed are flagged as `SEQUENCE_GAP`, never filled in.
+
+The earlier rule — pair the k-th queued value of each item — assumed equal queue depths per cycle,
+which discard-oldest does not preserve, and could stitch a sample from two steps.
 
 ### 1.4 Quality translation
 
@@ -257,8 +282,13 @@ or restarted device, which is the one thing it can honestly infer.
 |---|---|
 | Poll interval | 100 ms |
 | Read | one block read of **23 registers** (offsets +0…+22) per equipment |
-| Response timeout | 250 ms |
+| Response timeout | 250 ms — a timed-out read **closes the connection** |
 | Reconnect backoff | 250 ms → 8 s, exponential ×2, ±20 % jitter |
+
+A timeout closes the socket rather than abandoning the request on it: the answer may still arrive,
+and on a connection left open it would be read as the reply to the **next** request. Any framing
+error — wrong transaction id, unit, function code, length or byte count — is treated the same way
+(OD-006).
 
 One block read per equipment, not seven single-register reads: it is atomic with respect to the
 simulator's update cycle, so a poll cannot straddle two model steps and return a physically

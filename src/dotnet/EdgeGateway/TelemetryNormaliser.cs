@@ -103,9 +103,23 @@ public sealed class TelemetryNormaliser
     }
 
     /// <summary>
-    /// Normalises an OPC UA sample. Unlike Modbus this carries a source timestamp and per-node
-    /// status, so <paramref name="sourceTimeUtc"/> is authoritative and a reversal against the
-    /// ingest clock is flagged rather than hidden.
+    /// Normalises an OPC UA frame: the path both the batch read and the subscription use.
+    /// <para>
+    /// The frame's §1.4 status flags are carried into the event. Dropping them would turn an
+    /// <c>Uncertain_*</c> reading into a GOOD one and a <c>Bad_NoCommunication</c> into a mere
+    /// missing sensor — the status is the only place OPC UA says either.
+    /// </para>
+    /// </summary>
+    public CanonicalTelemetry Normalise(OpcUaFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        return NormaliseOpcUa(
+            frame.Values, frame.StatusFlags, frame.Sequence, frame.SourceEpochMs, frame.State, frame.SourceTimeUtc);
+    }
+
+    /// <summary>
+    /// Normalises an OPC UA sample given as raw readings, with no node status. Kept for tests that
+    /// exercise the sequence and quality rules without a protocol frame.
     /// </summary>
     public CanonicalTelemetry Normalise(
         IReadOnlyDictionary<Channel, double?> readings,
@@ -113,6 +127,20 @@ public sealed class TelemetryNormaliser
         uint sourceEpochMs,
         EquipmentState state,
         DateTimeOffset sourceTimeUtc)
+        => NormaliseOpcUa(readings, [], sequence, sourceEpochMs, state, sourceTimeUtc);
+
+    /// <summary>
+    /// Unlike Modbus this carries a source timestamp and per-node status, so the source time is
+    /// authoritative and a reversal against the ingest clock is flagged rather than hidden. With no
+    /// source time at all, the event time is synthesised and says so (§1.5).
+    /// </summary>
+    private CanonicalTelemetry NormaliseOpcUa(
+        IReadOnlyDictionary<Channel, double?> readings,
+        IReadOnlyList<ChannelFlag> statusFlags,
+        ulong sequence,
+        uint sourceEpochMs,
+        EquipmentState state,
+        DateTimeOffset? sourceTimeUtc)
     {
         ArgumentNullException.ThrowIfNull(readings);
 
@@ -122,23 +150,39 @@ public sealed class TelemetryNormaliser
 
         foreach (var channel in Measurements)
         {
+            var status = statusFlags.Where(f => f.Channel == channel).ToList();
             var reading = readings.TryGetValue(channel, out var v) ? v : null;
-            values[channel] = reading is null
-                ? Missing(channel, flags)
-                : Evaluate(channel, reading.Value, flags);
+
+            if (reading is null)
+            {
+                // A Bad_* status already names why the value is null; SENSOR_MISSING on top would
+                // misreport a disconnect as a dead sensor.
+                values[channel] = status.Count > 0 ? null : Missing(channel, flags);
+            }
+            else
+            {
+                values[channel] = Evaluate(channel, reading.Value, flags);
+            }
+
+            flags.AddRange(status);
         }
 
-        // GAP-063: a source timestamp after the ingest clock beyond the skew budget is a real
-        // condition, not something to normalise away.
-        if (sourceTimeUtc - ingest > _clockSkewBudget)
+        var eventTime = sourceTimeUtc ?? ingest;
+        if (sourceTimeUtc is null)
         {
+            flags.Add(new ChannelFlag(Channel.Event, QualityFlag.TimestampSynthesised));
+        }
+        else if (sourceTimeUtc.Value - ingest > _clockSkewBudget)
+        {
+            // GAP-063: a source timestamp after the ingest clock beyond the skew budget is a real
+            // condition, not something to normalise away.
             flags.Add(new ChannelFlag(Channel.Event, QualityFlag.TimestampReversed));
         }
 
         AppendSequenceFlags(sequence, sourceEpochMs, flags);
         AppendBufferOverflowFlag(flags);
 
-        return Build(values, flags, sequence, sourceTimeUtc, ingest, SourceProtocol.OpcUa, state);
+        return Build(values, flags, sequence, eventTime, ingest, SourceProtocol.OpcUa, state);
     }
 
     private static double? Missing(Channel channel, List<ChannelFlag> flags)

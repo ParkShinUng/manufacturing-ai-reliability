@@ -32,14 +32,14 @@ public sealed class PollLoopTests
             return Task.CompletedTask;
         }
 
-        public Task<CanonicalTelemetry> ReadAsync(CancellationToken cancellationToken)
+        public Task<IReadOnlyList<CanonicalTelemetry>> ReadAsync(CancellationToken cancellationToken)
         {
             if (ReadFails)
             {
                 throw new IOException("endpoint gone");
             }
 
-            return Task.FromResult(new CanonicalTelemetry
+            return Task.FromResult<IReadOnlyList<CanonicalTelemetry>>([new CanonicalTelemetry
             {
                 EventId = Guid.NewGuid(),
                 EquipmentId = EquipmentId,
@@ -52,7 +52,7 @@ public sealed class PollLoopTests
                 Flags = [],
                 EquipmentState = EquipmentState.Running,
                 CorrelationId = Guid.NewGuid(),
-            });
+            }]);
         }
     }
 
@@ -241,6 +241,63 @@ public sealed class PollLoopTests
 
         await stopping.CancelAsync();
         await run;
+    }
+
+    [Fact]
+    public async Task AFailingSinkDoesNotTouchProtocolHealth()
+    {
+        // COD-P2-008. Egress is non-control-critical (section 4): a dead broker must not mark the
+        // equipment OFFLINE, reconnect it, or back off its sampling.
+        var (loop, _, _, time) = Build(new FailingSink(), bufferCapacity: 5);
+        using var stopping = new CancellationTokenSource();
+
+        var run = loop.RunAsync(stopping.Token);
+        await AdvanceUntilAsync(time, () => loop.PollsCompleted >= 20, "polling through a dead sink");
+        await stopping.CancelAsync();
+        await run;
+
+        Assert.True(loop.ProtocolConnected, "a sink fault reached protocol health");
+        Assert.Equal(1, loop.ReconnectTotal);   // the initial connect, and nothing since
+        Assert.Equal(0, loop.ReadFailures);
+        Assert.True(loop.EgressFailures >= 20, $"egress failures: {loop.EgressFailures}");
+        Assert.StartsWith("InvalidOperationException", loop.LastEgressFailure);
+    }
+
+    [Fact]
+    public async Task ARecordTheSinkRefusedIsRetriedNotLost()
+    {
+        var sink = new FlakySink { FailuresRemaining = 3 };
+        var (loop, _, _, time) = Build(sink);
+        using var stopping = new CancellationTokenSource();
+
+        var run = loop.RunAsync(stopping.Token);
+        await AdvanceUntilAsync(time, () => sink.Records.Count >= 5, "delivery after the sink recovers");
+        await stopping.CancelAsync();
+        await run;
+
+        // Contiguous from the first record: nothing refused was skipped.
+        Assert.Equal(Enumerable.Range(0, sink.Records.Count).Select(i => (ulong)i), sink.Records.Select(r => r.Sequence));
+        Assert.Equal(3, loop.EgressFailures);
+    }
+
+    private sealed class FlakySink : IEgressSink
+    {
+        private readonly List<CanonicalTelemetry> _records = [];
+
+        public int FailuresRemaining { get; set; }
+
+        public IReadOnlyList<CanonicalTelemetry> Records => _records;
+
+        public void Emit(CanonicalTelemetry telemetry)
+        {
+            if (FailuresRemaining > 0)
+            {
+                FailuresRemaining--;
+                throw new InvalidOperationException("broker blip");
+            }
+
+            _records.Add(telemetry);
+        }
     }
 
     [Fact]

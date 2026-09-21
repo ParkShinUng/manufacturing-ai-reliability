@@ -1,5 +1,6 @@
 # ADR-0020 — OPC UA and Modbus TCP libraries for the OT edge
-Status: **Accepted** (2026-09-16, dual-agent reviewed)
+Status: **Accepted** (2026-09-16, dual-agent reviewed) · **Amended 2026-09-21 by OD-006** — the
+gateway's Modbus client is no longer NModbus; see *Amendment* below.
 Challenge: [`reviews/phase-2/CODEX_ADR-0020_CHALLENGE_raw.md`](../../reviews/phase-2/CODEX_ADR-0020_CHALLENGE_raw.md)
 — `protocol choice` and `major dependency` are both on the mandatory participation list
 (`DUAL_AGENT_PROTOCOL.md` §2). Codex challenged over several rounds; every finding was classified,
@@ -67,7 +68,8 @@ regardless of how good it is otherwise.
 | simulator (OPC UA server) | `OPCFoundation.NetStandard.Opc.Ua.Server` | `1.5.378.176` |
 | edge gateway (OPC UA client) | `OPCFoundation.NetStandard.Opc.Ua.Client` | `1.5.378.176` |
 | both (configuration and certificate handling) | `OPCFoundation.NetStandard.Opc.Ua.Configuration` | `1.5.378.176` |
-| simulator and gateway (Modbus TCP) | `NModbus` | `3.0.83` |
+| simulator (Modbus TCP server) | `NModbus` | `3.0.83` |
+| edge gateway (Modbus TCP client) | none — in-repository async FC04 reader (OD-006) | — |
 
 `OPCFoundation.NetStandard.Opc.Ua.Core` comes in transitively and is not referenced directly.
 
@@ -184,6 +186,31 @@ library that has already passed them.
 
 **Hand-rolling OPC UA.** Not a real option, recorded only so the asymmetry with Modbus is explicit
 rather than looking like an oversight.
+
+## Amendment 2026-09-21 — the gateway's Modbus client (OD-006)
+
+NModbus 3.0.83's client "async" reads are `Task.Factory.StartNew` over a blocking socket read.
+Twenty poll loops starved the thread pool: healthy-run read timeouts, loop overruns and inflated
+gaps, all of which vanished when the pool was pre-sized. That was measured, decompiled, and
+confirmed independently by Codex. The product owner chose to **replace the client**, not provision
+around it.
+
+This does not reverse *Hand-rolling Modbus TCP* above, because that rejection was about the
+**server**, and its reasons are server reasons: many simultaneous connections, state, concurrency,
+transaction handling across them. The gateway's client has none of those. It holds one connection,
+has **one request outstanding at a time**, speaks one function code (FC04), and closes its socket on
+any failure. What remains is framing, and framing is testable in isolation:
+
+| Risk the rejection named | How the reader handles it | Test |
+|---|---|---|
+| transaction-id handling | one outstanding request; a mismatched id is a protocol error | `ModbusFramingTests` |
+| partial frames | `ReadExactlyAsync` for header and PDU | a response trickled one byte at a time |
+| over-length or short frames | MBAP length and byte count must agree with the request, exactly | wrong byte count, wrong length |
+| exception-response framing | `0x84` + code → `ModbusException` carrying the code | exception PDU on the wire |
+| a timed-out request | the socket is closed, so a late answer can never be read as the next one | silent server |
+
+The simulator keeps NModbus, so the two ends of every Modbus test are now **independent
+implementations** — which strengthens AC-021's argument rather than weakening it.
 
 ## Contract defects this ADR surfaced
 

@@ -128,8 +128,7 @@ public sealed class PollVsSubscribeTests
             {
                 while (subscription.TryDequeue(out var frame) && frame is not null)
                 {
-                    subscribedSink.Emit(subscribedNormaliser.Normalise(
-                        frame.Values, frame.Sequence, frame.SourceEpochMs, frame.State, frame.SourceTimeUtc));
+                    subscribedSink.Emit(subscribedNormaliser.Normalise(frame));
                 }
 
                 await Task.Delay(20, stopping.Token).ConfigureAwait(false);
@@ -177,8 +176,7 @@ public sealed class PollVsSubscribeTests
         // discarding it would understate the queued path for no reason.
         while (subscription.TryDequeue(out var late) && late is not null)
         {
-            subscribedSink.Emit(subscribedNormaliser.Normalise(
-                late.Values, late.Sequence, late.SourceEpochMs, late.State, late.SourceTimeUtc));
+            subscribedSink.Emit(subscribedNormaliser.Normalise(late));
         }
 
         var produced = equipment.TicksApplied;

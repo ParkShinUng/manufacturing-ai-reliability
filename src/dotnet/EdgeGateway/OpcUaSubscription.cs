@@ -11,8 +11,7 @@ namespace Mair.EdgeGateway;
 /// The difference is the point. A polled client reads whatever the node holds right now, so a sample
 /// produced and overwritten between two polls is gone. A subscription asks the <b>server</b> to
 /// sample at 50 ms and queue up to 10 values per item with discard-oldest, so a client that misses a
-/// publishing cycle still receives what it missed. Measured over 60 s against a simulator producing
-/// at 100 ms: 599 of 601 distinct samples with zero gaps, against 439 for the polled path (OD-005).
+/// publishing cycle still receives what it missed (OD-005).
 /// </para>
 /// </summary>
 public sealed class OpcUaSubscription : IAsyncDisposable
@@ -25,31 +24,17 @@ public sealed class OpcUaSubscription : IAsyncDisposable
     public const uint KeepAliveCount = 5;          // ~500 ms silence detection
     public const uint LifetimeCount = 15;          // 3x keep-alive, per OPC UA convention
 
-    /// <summary>The ten nodes a canonical sample needs. <c>RateSetpoint</c> is not one of them.</summary>
-    private static readonly (string Identifier, Channel? Channel)[] Nodes =
-    [
-        ("Rpm", Channel.Rpm),
-        ("TorqueNm", Channel.TorqueNm),
-        ("CurrentA", Channel.CurrentA),
-        ("VoltageV", Channel.VoltageV),
-        ("TemperatureC", Channel.TemperatureC),
-        ("VibrationRms", Channel.VibrationRms),
-        ("OperationRatePct", Channel.OperationRatePct),
-        ("State", null),
-        ("SequenceNo", null),
-        ("SourceEpochMs", null),
-    ];
-
-    /// <summary>The tick marker: it changes on every model step, so it is what defines a sample.</summary>
-    private const string Marker = "SequenceNo";
-
     private readonly ISession _session;
     private readonly string _equipmentId;
     private readonly ushort _namespaceIndex;
     private readonly ConcurrentQueue<OpcUaFrame> _ready = new();
-    private readonly Dictionary<uint, string> _handles = [];
-    private readonly Dictionary<string, DataValue> _carried = [];
+    private readonly OpcUaSampleAssembler _assembler = new();
     private readonly Lock _gate = new();
+
+    // Written once, before the subscription exists on the server, and only read afterwards. The
+    // first publish can arrive before CreateAsync returns, so filling this after it would drop the
+    // first notifications and race a Dictionary write against the callback (COD-P2-002).
+    private readonly Dictionary<uint, string> _handles = [];
 
     private Subscription? _subscription;
 
@@ -66,11 +51,27 @@ public sealed class OpcUaSubscription : IAsyncDisposable
     public int ReadyCount => _ready.Count;
 
     /// <summary>
-    /// Markers seen before every node had reported at least once. Only possible at start-up, and
-    /// counted rather than filled in: inventing a value for a node that has never spoken is the
-    /// fabricated reading ADR-0018 forbids.
+    /// Markers dropped because not every node delivered a value with the marker's own timestamp —
+    /// at start-up, or after a queue overflow discarded one. Counted rather than filled in: inventing
+    /// a value is the fabricated reading ADR-0018 forbids, and the missing sequence then surfaces
+    /// downstream as <c>SEQUENCE_GAP</c>.
     /// </summary>
-    public long IncompleteGroupsDropped { get; private set; }
+    public long IncompleteGroupsDropped
+    {
+        get { lock (_gate) { return _assembler.IncompleteGroupsDropped; } }
+    }
+
+    /// <summary>Values that arrived after their marker had already been emitted or dropped.</summary>
+    public long LateValuesDiscarded
+    {
+        get { lock (_gate) { return _assembler.LateValuesDiscarded; } }
+    }
+
+    /// <summary>
+    /// True while the server is publishing. False once the keep-alive has lapsed, which is how a
+    /// dead endpoint becomes visible on a push path that otherwise just goes quiet.
+    /// </summary>
+    public bool IsPublishing => _subscription is { PublishingStopped: false } && _session.Connected;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -82,29 +83,10 @@ public sealed class OpcUaSubscription : IAsyncDisposable
             LifetimeCount = LifetimeCount,
             PublishingEnabled = true,
             TimestampsToReturn = TimestampsToReturn.Both,
-
-            // Assemble per publish cycle rather than per item. This is the whole coherence argument,
-            // and it took three wrong turns to reach:
-            //
-            // 1. Group all ten items by a shared source timestamp. Produced three samples in sixty
-            //    seconds — an item reports on CHANGE, and `State` sits at RUNNING all run, so a
-            //    group requiring it never completed.
-            // 2. Assemble on the marker from each node's LATEST value. Fast, but incoherent: if the
-            //    marker for tick N arrives before the epoch for tick N, the sample pairs sequence N
-            //    with epoch N-1. A sample stitched from two model steps is not a reading the
-            //    equipment ever produced, which puts it alongside the substituted values ADR-0018
-            //    forbids. A coherence test caught it on its first run.
-            // 3. Hold the marker until every node has reported at or after its timestamp. Correct in
-            //    principle, unusable in practice: a stable node never reports, so it can never
-            //    supply that proof, and markers were held forever.
-            //
-            // Per publish cycle removes the ambiguity that defeated 2 and 3: an item absent from a
-            // DataChangeNotification did not change during that cycle, and the protocol guarantees
-            // it — unlike per-item delivery, where "no value yet" and "unchanged" look identical.
             FastDataChangeCallback = OnDataChange,
         };
 
-        foreach (var (identifier, _) in Nodes)
+        foreach (var identifier in OpcUaFrame.NodeIdentifiers)
         {
             var item = new MonitoredItem(subscription.DefaultItem)
             {
@@ -116,160 +98,50 @@ public sealed class OpcUaSubscription : IAsyncDisposable
                 QueueSize = QueueSize,
                 DiscardOldest = DiscardOldest,
 
-                // No deadband. §1.3 is explicit: a deadband would suppress unchanged values, and an
-                // unchanged value is exactly what SENSOR_FROZEN detection needs to see.
-                Filter = null,
+                // No deadband (§1.3): it would suppress the unchanged values SENSOR_FROZEN needs.
+                //
+                // The trigger includes the timestamp, so every node reports on every model step even
+                // when its value did not change. That is what makes the source timestamp an exact
+                // coherence key: a sample is the ten values stamped with one instant, and nothing has
+                // to be inferred about a node that stayed silent (COD-P2-001).
+                Filter = new DataChangeFilter
+                {
+                    Trigger = DataChangeTrigger.StatusValueTimestamp,
+                    DeadbandType = (uint)DeadbandType.None,
+                    DeadbandValue = 0,
+                },
             };
 
+            _handles[item.ClientHandle] = identifier;
             subscription.AddItem(item);
         }
 
         _session.AddSubscription(subscription);
         await subscription.CreateAsync(cancellationToken);
-
-        foreach (var item in subscription.MonitoredItems)
-        {
-            _handles[item.ClientHandle] = item.DisplayName;
-        }
-
         _subscription = subscription;
     }
 
-    /// <summary>
-    /// One publish cycle. Items that changed carry their queued values in order; items that did not
-    /// change are absent, and their last known value is still the value in effect.
-    /// <para>
-    /// When the server is catching up after a missed cycle, every changing item carries the same
-    /// number of queued values, so the k-th value of each belongs to the k-th model step in the
-    /// cycle. That index is what pairs a <c>SequenceNo</c> with the measurements taken alongside it.
-    /// </para>
-    /// </summary>
     private void OnDataChange(
         Subscription subscription, DataChangeNotification notification, IList<string> stringTable)
     {
-        var byNode = new Dictionary<string, List<DataValue>>();
+        var values = new List<(string Node, DataValue Value)>(notification.MonitoredItems.Count);
 
         foreach (var item in notification.MonitoredItems)
         {
-            if (!_handles.TryGetValue(item.ClientHandle, out var identifier))
+            if (_handles.TryGetValue(item.ClientHandle, out var identifier))
             {
-                continue;
+                values.Add((identifier, item.Value));
             }
-
-            if (!byNode.TryGetValue(identifier, out var values))
-            {
-                byNode[identifier] = values = [];
-            }
-
-            values.Add(item.Value);
         }
 
         lock (_gate)
         {
-            if (byNode.TryGetValue(Marker, out var markers) && markers.Count > 0)
+            foreach (var group in _assembler.AddCycle(values))
             {
-                for (var k = 0; k < markers.Count; k++)
-                {
-                    Emit(byNode, markers[k], k);
-                }
-            }
-
-            // Carried even when no marker arrived: the values are still in effect for the next one.
-            foreach (var (identifier, values) in byNode)
-            {
-                if (values.Count > 0)
-                {
-                    _carried[identifier] = values[^1];
-                }
+                _ready.Enqueue(OpcUaFrame.From(group));
             }
         }
     }
-
-    private void Emit(Dictionary<string, List<DataValue>> byNode, DataValue marker, int index)
-    {
-        var group = new Dictionary<string, DataValue>(Nodes.Length);
-
-        foreach (var (identifier, _) in Nodes)
-        {
-            // The k-th queued value where the item reported that many; otherwise its last value this
-            // cycle; otherwise what it last reported in an earlier cycle, which by the protocol's
-            // change semantics is still the value in effect.
-            var value = byNode.TryGetValue(identifier, out var values) && values.Count > 0
-                ? values[Math.Min(index, values.Count - 1)]
-                : _carried.GetValueOrDefault(identifier);
-
-            if (value is null)
-            {
-                IncompleteGroupsDropped++;
-                return;
-            }
-
-            group[identifier] = value;
-        }
-
-        _ready.Enqueue(Assemble(group, marker));
-    }
-
-    private OpcUaFrame Assemble(Dictionary<string, DataValue> group, DataValue sequenceValue)
-    {
-        var readings = new Dictionary<Channel, double?>();
-        var flags = new List<ChannelFlag>();
-
-        foreach (var (identifier, channel) in Nodes)
-        {
-            if (channel is { } c)
-            {
-                readings[c] = TranslateStatus(c, group[identifier], flags);
-            }
-        }
-
-        var sourceTimestamp = sequenceValue.SourceTimestamp;
-
-        return new OpcUaFrame
-        {
-            Values = readings,
-            StatusFlags = flags,
-            State = StateFrom(Convert.ToUInt16(group["State"].Value ?? (ushort)0)),
-            Sequence = Convert.ToUInt64(sequenceValue.Value ?? 0UL),
-            SourceEpochMs = Convert.ToUInt32(group["SourceEpochMs"].Value ?? 0u),
-            SourceTimeUtc = new DateTimeOffset(
-                sourceTimestamp == default ? DateTime.UtcNow : sourceTimestamp, TimeSpan.Zero),
-        };
-    }
-
-    /// <summary>§1.4 status translation, identical to the polled path so the two cannot diverge.</summary>
-    private static double? TranslateStatus(Channel channel, DataValue value, List<ChannelFlag> flags)
-    {
-        if (StatusCode.IsBad(value.StatusCode))
-        {
-            flags.Add(new ChannelFlag(channel, value.StatusCode.Code switch
-            {
-                StatusCodes.BadNoCommunication => QualityFlag.SensorDisconnected,
-                _ => QualityFlag.SensorMissing,
-            }));
-
-            return null;
-        }
-
-        if (StatusCode.IsUncertain(value.StatusCode))
-        {
-            flags.Add(new ChannelFlag(channel, QualityFlag.StaleReading));
-        }
-
-        return value.Value is null ? null : Convert.ToDouble(value.Value);
-    }
-
-    private static EquipmentState StateFrom(ushort code) => code switch
-    {
-        0 => EquipmentState.Offline,
-        1 => EquipmentState.Connecting,
-        2 => EquipmentState.Idle,
-        3 => EquipmentState.Running,
-        4 => EquipmentState.Degraded,
-        5 => EquipmentState.Fault,
-        6 => EquipmentState.Stopping,
-        _ => throw new ArgumentOutOfRangeException(nameof(code), code, "unknown equipment state code (§3)"),
-    };
 
     public bool TryDequeue(out OpcUaFrame? frame) => _ready.TryDequeue(out frame);
 
@@ -277,9 +149,170 @@ public sealed class OpcUaSubscription : IAsyncDisposable
     {
         if (_subscription is not null)
         {
-            await _session.RemoveSubscriptionAsync(_subscription, CancellationToken.None);
+            try
+            {
+                await _session.RemoveSubscriptionAsync(_subscription, CancellationToken.None);
+            }
+            catch (ServiceResultException)
+            {
+                // The session is already gone, which is the usual reason to be disposing it.
+            }
+
             _subscription.Dispose();
             _subscription = null;
+        }
+    }
+}
+
+/// <summary>
+/// Turns per-cycle monitored-item values into coherent samples, keyed on the source timestamp.
+/// <para>
+/// The simulator stamps all ten nodes of one model step with one instant, and the subscription's
+/// trigger makes every node report on every step. So a sample is <b>exactly</b> the ten values that
+/// share the marker's timestamp. This replaced a k-th-value pairing that assumed every item carried
+/// the same number of queued values per cycle; OPC UA guarantees no such thing, and when discard-
+/// oldest drops different values from different items it stitched readings from different steps.
+/// </para>
+/// <para>
+/// A node's value for a step can land one publishing cycle after the marker — the server samples
+/// items independently, so a step can straddle a cycle boundary — so an incomplete marker is held
+/// for <see cref="HoldCycles"/> cycles before it is dropped. Complete markers are emitted at once;
+/// the hold costs latency only on a step that is actually straddling.
+/// </para>
+/// </summary>
+internal sealed class OpcUaSampleAssembler
+{
+    private const string Marker = "SequenceNo";
+
+    /// <summary>Straddling needs one; two leaves a margin for a late sampling pass.</summary>
+    internal const int HoldCycles = 2;
+
+    /// <summary>
+    /// Values kept per node, a backstop against a marker that never arrives. Two cycles of a full
+    /// queue is 20; anything this far behind can no longer complete.
+    /// </summary>
+    private const int MaxValuesPerNode = 64;
+
+    private readonly Dictionary<string, Dictionary<DateTime, DataValue>> _byNode = [];
+    private readonly List<(DataValue Value, int Age)> _markers = [];
+    private DateTime _settledThrough = DateTime.MinValue;
+
+    public long IncompleteGroupsDropped { get; private set; }
+
+    public long LateValuesDiscarded { get; private set; }
+
+    /// <summary>Adds one publishing cycle and returns the samples it completed, oldest first.</summary>
+    public IReadOnlyList<DataValue[]> AddCycle(IEnumerable<(string Node, DataValue Value)> values)
+    {
+        foreach (var (node, value) in values)
+        {
+            var timestamp = value.SourceTimestamp;
+
+            if (timestamp <= _settledThrough)
+            {
+                // Its marker has already been emitted or dropped. Using it now would attach it to a
+                // later sample; the count makes a server whose steps straddle more than the hold
+                // visible rather than silently lossy.
+                LateValuesDiscarded++;
+                continue;
+            }
+
+            if (node == Marker)
+            {
+                // A marker with a bad status carries no sequence: the equipment is not answering, and
+                // that is reported by the session and the next sequence, not by a sample of nulls.
+                if (!StatusCode.IsBad(value.StatusCode) && timestamp != DateTime.MinValue)
+                {
+                    _markers.Add((value, 0));
+                }
+
+                continue;
+            }
+
+            if (!_byNode.TryGetValue(node, out var byTime))
+            {
+                _byNode[node] = byTime = [];
+            }
+
+            byTime[timestamp] = value;
+
+            if (byTime.Count > MaxValuesPerNode)
+            {
+                byTime.Remove(byTime.Keys.Min());
+            }
+        }
+
+        _markers.Sort((a, b) => a.Value.SourceTimestamp.CompareTo(b.Value.SourceTimestamp));
+
+        var completed = new List<DataValue[]>();
+        var i = 0;
+
+        for (; i < _markers.Count; i++)
+        {
+            var (marker, age) = _markers[i];
+            var group = GroupAt(marker);
+
+            if (group is not null)
+            {
+                completed.Add(group);
+            }
+            else if (age >= HoldCycles)
+            {
+                IncompleteGroupsDropped++;
+            }
+            else
+            {
+                break; // hold this one, and everything after it, so samples leave in order
+            }
+
+            Settle(marker.SourceTimestamp);
+        }
+
+        _markers.RemoveRange(0, i);
+        for (var j = 0; j < _markers.Count; j++)
+        {
+            _markers[j] = (_markers[j].Value, _markers[j].Age + 1);
+        }
+
+        return completed;
+    }
+
+    private DataValue[]? GroupAt(DataValue marker)
+    {
+        var timestamp = marker.SourceTimestamp;
+        var group = new DataValue[OpcUaFrame.NodeIdentifiers.Length];
+
+        for (var k = 0; k < group.Length; k++)
+        {
+            var node = OpcUaFrame.NodeIdentifiers[k];
+
+            if (node == Marker)
+            {
+                group[k] = marker;
+            }
+            else if (_byNode.TryGetValue(node, out var byTime) && byTime.TryGetValue(timestamp, out var value))
+            {
+                group[k] = value;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        return group;
+    }
+
+    private void Settle(DateTime timestamp)
+    {
+        _settledThrough = timestamp;
+
+        foreach (var byTime in _byNode.Values)
+        {
+            foreach (var stale in byTime.Keys.Where(t => t <= timestamp).ToList())
+            {
+                byTime.Remove(stale);
+            }
         }
     }
 }

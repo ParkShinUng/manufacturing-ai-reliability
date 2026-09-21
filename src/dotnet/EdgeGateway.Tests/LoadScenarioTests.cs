@@ -1,98 +1,230 @@
 using System.Diagnostics;
-using Sim = Mair.EquipmentSimulator;
 using Protocols = Mair.EquipmentSimulator.Protocols;
 
 namespace Mair.EdgeGateway.Tests;
 
 /// <summary>
-/// <b>LOAD-001</b> — 20 equipment at 100 ms for 30 minutes, in <b>real time</b>, through the real
-/// protocol stack: simulator → Modbus TCP → gateway poll loops → egress.
+/// The real gateway path end to end: simulator → Modbus TCP <b>and</b> the OPC UA subscription →
+/// gateway poll loops → egress, in <b>real time</b>.
 /// <para>
-/// This is the half <c>OT-001</c> cannot prove. OT-001 compresses 30 simulated minutes into seconds
-/// because the simulator is tick-driven; what it therefore says nothing about is scheduler jitter,
-/// GC pauses, socket stability, and loop overruns — all of which only exist in wall-clock time.
+/// <b>LOAD-001</b> is the 30-minute run. It is the half the tick-driven <c>OT-001</c> cannot prove —
+/// scheduler jitter, GC pauses, socket stability, loop overruns only exist in wall-clock time — and
+/// it is skipped unless <c>MAIR_LOAD_TEST=1</c>, because it is not a unit test. Invoke it through
+/// <c>scripts/run-load-001.mjs</c>, which captures the environment and writes the report (NFR-005,
+/// AC-042).
 /// </para>
 /// <para>
-/// <b>Skipped unless <c>MAIR_LOAD_TEST=1</c>.</b> It is not a unit test and must never run in the
-/// ordinary suite. Invoke it through <c>scripts/run-load-001.mjs</c>, which captures the environment
-/// and writes a report — NFR-005 and AC-042 require every performance figure to come from a script,
-/// never from a number someone typed.
+/// <b>AC-001 on the shipping path</b> runs the same rig for a few seconds in the ordinary suite, so
+/// "the Edge Gateway emits" is checked through the real servers, clients and loops on every run and
+/// not only by the in-process <c>SustainedEmissionTests</c> (COD-P2-006).
 /// </para>
 /// </summary>
 public sealed class LoadScenarioTests
 {
     private const int EquipmentCount = 20;
 
+    /// <summary>
+    /// Margin after the last loop's first record before the OPC UA zero-gap claim applies. Warm-up is
+    /// measured, not assumed: twenty sessions and subscriptions take a variable time to come up, and
+    /// a fixed allowance would either hide real gaps or count start-up as loss.
+    /// </summary>
+    private static readonly TimeSpan WarmUpMargin = TimeSpan.FromSeconds(1);
+
     private static bool Enabled => Environment.GetEnvironmentVariable("MAIR_LOAD_TEST") == "1";
 
-    private static TimeSpan Duration =>
+    private static TimeSpan LoadDuration =>
         int.TryParse(Environment.GetEnvironmentVariable("MAIR_LOAD_SECONDS"), out var s) && s > 0
             ? TimeSpan.FromSeconds(s)
             : TimeSpan.FromMinutes(30);
 
-    private sealed class LiveEquipment : Protocols.IEquipmentAccess
+    private sealed record ProtocolRun(
+        string Name,
+        IReadOnlyList<EquipmentPollLoop> Loops,
+        IReadOnlyList<RecordingEgressSink> Sinks,
+        IReadOnlyList<TelemetryNormaliser> Normalisers,
+        IReadOnlyList<BoundedEgressBuffer> Buffers)
     {
-        private readonly Sim.EquipmentSimulation[] _equipment;
-        private readonly Sim.RawSample?[] _latest;
-        private readonly Lock _gate = new();
+        public int Records => Sinks.Sum(s => s.Records.Count);
 
-        public LiveEquipment(int count)
+        public int Distinct => Sinks.Sum(s => s.Records.Select(r => r.Sequence).Distinct().Count());
+
+        public long Gaps => Normalisers.Sum(n => n.SequenceGaps);
+
+        public string Report(long ticks) =>
+            $"{Name}_records={Records}\n" +
+            $"{Name}_distinct_sequences={Distinct}\n" +
+            $"{Name}_duplicates={Records - Distinct}\n" +
+            $"{Name}_coverage_pct={100.0 * Distinct / Math.Max(1, ticks * Loops.Count):F1}\n" +
+            $"{Name}_sequence_gaps={Gaps}\n" +
+            $"{Name}_read_failures={Loops.Sum(l => l.ReadFailures)}\n" +
+            $"{Name}_connect_failures={Loops.Sum(l => l.ConnectFailures)}\n" +
+            $"{Name}_loop_overruns={Loops.Sum(l => l.LoopOverruns)}\n" +
+            $"{Name}_buffer_drops={Buffers.Sum(b => b.DroppedTotal)}\n" +
+            $"{Name}_egress_failures={Loops.Sum(l => l.EgressFailures)}\n" +
+            $"{Name}_last_failure={Loops.Select(l => l.LastFailure).FirstOrDefault(f => f is not null) ?? "none"}\n";
+    }
+
+    private sealed record RunResult(ProtocolRun Run, long Ticks, TimeSpan Elapsed)
+    {
+        public DateTimeOffset WarmedUpAt =>
+            Run.Sinks.Max(s => s.Records.Count > 0 ? s.Records[0].IngestTimeUtc : DateTimeOffset.MaxValue) + WarmUpMargin;
+    }
+
+    private enum Path2 { Modbus, OpcUa }
+
+    /// <summary>
+    /// One protocol path for all twenty machines. One protocol at a time, because that is what a
+    /// gateway does - each machine is read over one protocol - and running both in one process
+    /// measured the test rig's contention rather than either path: forty loops and twenty sessions
+    /// halved the achieved poll rate on a laptop.
+    /// </summary>
+    private static async Task<RunResult> RunAsync(Path2 path, TimeSpan duration)
+    {
+        var equipment = new LiveEquipment(EquipmentCount);
+        var pki = LiveRig.NewPkiRoot("load");
+
+        await using var modbusServer = new Protocols.ModbusServerHost(equipment, readOnlyPort: 0, writePort: 0);
+        modbusServer.Start();
+
+        await using var opcUaServer = await Protocols.OpcUaServerHost.StartAsync(
+            equipment, equipment.Ids, port: LiveRig.FreePort(), pkiRoot: Path.Combine(pki, "server"));
+
+        using var stopping = new CancellationTokenSource();
+        var clock = equipment.RunClockAsync(() => opcUaServer, stopping.Token);
+
+        var modbusClients = new List<ModbusTelemetryClient>();
+        var opcUaClients = new List<OpcUaTelemetryClient>();
+        var opcUaSources = new List<OpcUaSubscriptionTelemetrySource>();
+
+        ProtocolRun Build(string name, Func<int, TelemetryNormaliser, ITelemetrySource> source)
         {
-            _equipment = new Sim.EquipmentSimulation[count];
-            _latest = new Sim.RawSample?[count];
+            var loops = new List<EquipmentPollLoop>();
+            var sinks = new List<RecordingEgressSink>();
+            var normalisers = new List<TelemetryNormaliser>();
+            var buffers = new List<BoundedEgressBuffer>();
 
-            for (var i = 0; i < count; i++)
+            for (var i = 0; i < EquipmentCount; i++)
             {
-                _equipment[i] = new Sim.EquipmentSimulation(new Sim.EquipmentOptions
-                {
-                    EquipmentId = $"eq-{i + 1:D3}",
-                    Seed = (ulong)(20260918 + i),
-                    FaultProfile = (i % 3) switch
-                    {
-                        0 => Sim.FaultProfile.Normal,
-                        1 => Sim.FaultProfile.BearingDegradation,
-                        _ => Sim.FaultProfile.CoolingDegradation,
-                    },
-                });
+                var normaliser = new TelemetryNormaliser(LiveEquipment.IdOf(i), $"edge-gateway@{name}");
+                var buffer = new BoundedEgressBuffer(onDrop: normaliser.NoteBufferOverflowDrop);
+                var sink = new RecordingEgressSink();
 
-                _equipment[i].Connect();
+                loops.Add(new EquipmentPollLoop(source(i, normaliser), buffer, sink));
+                sinks.Add(sink);
+                normalisers.Add(normaliser);
+                buffers.Add(buffer);
             }
+
+            return new ProtocolRun(name, loops, sinks, normalisers, buffers);
         }
 
-        public int Count => _equipment.Length;
-
-        public long TicksApplied { get; private set; }
-
-        /// <summary>One model step for every equipment. Driven by the harness, not by a timer here.</summary>
-        public void Tick()
-        {
-            lock (_gate)
+        var run = path == Path2.Modbus
+            ? Build("modbus", (i, normaliser) =>
             {
-                for (var i = 0; i < _equipment.Length; i++)
+                var client = new ModbusTelemetryClient("127.0.0.1", modbusServer.ActualReadOnlyPort);
+                modbusClients.Add(client);
+                return new ModbusTelemetrySource(LiveEquipment.IdOf(i), i, client, normaliser);
+            })
+            : Build("opcua", (i, normaliser) =>
+            {
+                var client = new OpcUaTelemetryClient(opcUaServer.EndpointUrl, Path.Combine(pki, "gateway"));
+                var source = new OpcUaSubscriptionTelemetrySource(LiveEquipment.IdOf(i), client, normaliser);
+                opcUaClients.Add(client);
+                opcUaSources.Add(source);
+                return source;
+            });
+
+        var started = Stopwatch.GetTimestamp();
+        var running = run.Loops.Select(l => l.RunAsync(stopping.Token)).ToList();
+
+        await Task.Delay(duration);
+
+        var elapsed = Stopwatch.GetElapsedTime(started);
+        var ticks = equipment.TicksApplied;
+        await stopping.CancelAsync();
+        await Task.WhenAll(running.Append(clock));
+
+        foreach (var source in opcUaSources)
+        {
+            await source.DisposeAsync();
+        }
+
+        foreach (var client in opcUaClients)
+        {
+            await client.DisposeAsync();
+        }
+
+        foreach (var client in modbusClients)
+        {
+            client.Dispose();
+        }
+
+        LiveRig.DeleteQuietly(pki);
+        return new RunResult(run, ticks, elapsed);
+    }
+
+    /// <summary>
+    /// Modbus, OD-005: detection, not prevention. Every skipped sequence must carry
+    /// <c>SEQUENCE_GAP</c> — the claim is that no loss is silent, not that there is none.
+    /// </summary>
+    private static void AssertEverySkipIsFlagged(ProtocolRun run)
+    {
+        foreach (var sink in run.Sinks)
+        {
+            for (var i = 1; i < sink.Records.Count; i++)
+            {
+                var (previous, current) = (sink.Records[i - 1], sink.Records[i]);
+                if (current.Sequence > previous.Sequence + 1)
                 {
-                    _equipment[i].WriteSetpoint(100);
-                    _latest[i] = _equipment[i].Tick() ?? _latest[i];
+                    Assert.True(current.HasFlag(Channel.Event, QualityFlag.SequenceGap),
+                        $"{current.EquipmentId}: {previous.Sequence} -> {current.Sequence} was not flagged");
                 }
-
-                TicksApplied++;
             }
         }
+    }
 
-        public Sim.RawSample? Latest(int equipmentIndex)
+    /// <summary>OPC UA subscription, OD-005: prevention. Zero gaps once the subscriptions are up.</summary>
+    private static void AssertNoGapsAfterWarmUp(ProtocolRun run, DateTimeOffset warmedUpAt)
+    {
+        var gapsAfterWarmUp = run.Sinks
+            .SelectMany(s => s.Records)
+            .Where(r => r.IngestTimeUtc > warmedUpAt)
+            .Count(r => r.HasFlag(Channel.Event, QualityFlag.SequenceGap));
+
+        Assert.Equal(0, gapsAfterWarmUp);
+        Assert.Equal(0, run.Buffers.Sum(b => b.DroppedTotal));
+    }
+
+    private static void AssertEmitsCanonical(ProtocolRun run, SourceProtocol protocol)
+    {
+        // Every machine got telemetry out of the gateway, and every record is canonical.
+        Assert.All(run.Sinks, s => Assert.NotEmpty(s.Records));
+
+        foreach (var record in run.Sinks.SelectMany(s => s.Records))
         {
-            lock (_gate)
-            {
-                return _latest[equipmentIndex];
-            }
+            LiveRig.AssertCanonical(record);
+            Assert.Equal(protocol, record.SourceProtocol);
         }
 
-        public Sim.SetpointResult WriteSetpoint(int equipmentIndex, double ratePct)
-        {
-            lock (_gate)
-            {
-                return _equipment[equipmentIndex].WriteSetpoint(ratePct);
-            }
-        }
+        Assert.All(run.Loops, l => Assert.True(l.ProtocolConnected, $"{run.Name}: {l.LastFailure}"));
+        Assert.Equal(0, run.Loops.Sum(l => l.EgressFailures));
+    }
+
+    [Fact]
+    public async Task Ac001_TwentyMachinesEmitCanonicalTelemetryOverModbus()
+    {
+        var result = await RunAsync(Path2.Modbus, TimeSpan.FromSeconds(5));
+
+        AssertEmitsCanonical(result.Run, SourceProtocol.ModbusTcp);
+        AssertEverySkipIsFlagged(result.Run);
+    }
+
+    [Fact]
+    public async Task Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription()
+    {
+        var result = await RunAsync(Path2.OpcUa, TimeSpan.FromSeconds(8));
+
+        AssertEmitsCanonical(result.Run, SourceProtocol.OpcUa);
     }
 
     [SkippableFact]
@@ -100,113 +232,35 @@ public sealed class LoadScenarioTests
     {
         Skip.IfNot(Enabled, "LOAD-001 runs only under MAIR_LOAD_TEST=1; use scripts/run-load-001.mjs.");
 
-        var duration = Duration;
-        var equipment = new LiveEquipment(EquipmentCount);
-
-        await using var server = new Protocols.ModbusServerHost(equipment, readOnlyPort: 0, writePort: 0);
-        server.Start();
-
-        using var stopping = new CancellationTokenSource();
-        var loops = new List<EquipmentPollLoop>();
-        var sinks = new List<RecordingEgressSink>();
-        var clients = new List<ModbusTelemetryClient>();
-        var normalisers = new List<TelemetryNormaliser>();
-        var running = new List<Task>();
-
-        for (var i = 0; i < EquipmentCount; i++)
-        {
-            var id = $"eq-{i + 1:D3}";
-            var client = new ModbusTelemetryClient("127.0.0.1", server.ActualReadOnlyPort);
-            var normaliser = new TelemetryNormaliser(id, "edge-gateway@load-001");
-            var sink = new RecordingEgressSink();
-            var loop = new EquipmentPollLoop(
-                new ModbusTelemetrySource(id, i, client, normaliser),
-                new BoundedEgressBuffer(),
-                sink);
-
-            clients.Add(client);
-            normalisers.Add(normaliser);
-            sinks.Add(sink);
-            loops.Add(loop);
-            running.Add(loop.RunAsync(stopping.Token));
-        }
-
-        // The model clock. Real 100 ms steps, because the point of this run is wall-clock behaviour.
-        var ticker = Task.Run(async () =>
-        {
-            var next = Stopwatch.GetTimestamp();
-            while (!stopping.Token.IsCancellationRequested)
-            {
-                equipment.Tick();
-                next += (long)(Stopwatch.Frequency * 0.1);
-                var wait = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), next);
-                if (wait > TimeSpan.Zero)
-                {
-                    await Task.Delay(wait, stopping.Token).ConfigureAwait(false);
-                }
-            }
-        }, stopping.Token);
-
-        var started = Stopwatch.GetTimestamp();
-        try
-        {
-            await Task.Delay(duration, stopping.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Nothing cancels this externally; the catch exists so a cancelled run reports rather
-            // than throws.
-        }
-
-        var elapsed = Stopwatch.GetElapsedTime(started);
-        await stopping.CancelAsync();
-
-        try
-        {
-            await Task.WhenAll(running.Append(ticker));
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected: cancellation is how the loops stop.
-        }
-
-        foreach (var client in clients)
-        {
-            client.Dispose();
-        }
-
-        var emitted = sinks.Sum(s => s.Records.Count);
-        var gaps = normalisers.Sum(n => n.SequenceGaps);
-        var overruns = loops.Sum(l => l.LoopOverruns);
-        var reconnects = loops.Sum(l => l.ReconnectTotal) - EquipmentCount; // the first connect is not a reconnect
+        // Sequential, each for the full duration: see RunAsync for why not side by side.
+        var modbus = await RunAsync(Path2.Modbus, LoadDuration);
+        var opcUa = await RunAsync(Path2.OpcUa, LoadDuration);
 
         // Written where the driver script can pick it up, because a number printed to a test log is
         // not evidence (NFR-005, AC-042).
         var summary =
-            $"elapsed_seconds={elapsed.TotalSeconds:F1}\n" +
             $"equipment={EquipmentCount}\n" +
-            $"model_ticks={equipment.TicksApplied}\n" +
-            $"events_emitted={emitted}\n" +
-            $"sequence_gaps={gaps}\n" +
-            $"loop_overruns={overruns}\n" +
-            $"reconnects={reconnects}\n" +
-            $"events_per_second={emitted / Math.Max(1, elapsed.TotalSeconds):F1}\n" +
-            $"read_failures={loops.Sum(l => l.ReadFailures)}\n" +
-            $"connect_failures={loops.Sum(l => l.ConnectFailures)}\n" +
-            $"last_failure={loops.Select(l => l.LastFailure).FirstOrDefault(f => f is not null) ?? "none"}\n";
+            $"modbus_elapsed_seconds={modbus.Elapsed.TotalSeconds:F1}\n" +
+            $"modbus_model_ticks={modbus.Ticks}\n" +
+            modbus.Run.Report(modbus.Ticks) +
+            $"opcua_elapsed_seconds={opcUa.Elapsed.TotalSeconds:F1}\n" +
+            $"opcua_model_ticks={opcUa.Ticks}\n" +
+            $"opcua_warm_up_seconds={(opcUa.WarmedUpAt - WarmUpMargin - opcUa.Run.Sinks.Min(s => s.Records.Count > 0 ? s.Records[0].IngestTimeUtc : DateTimeOffset.MaxValue)).TotalSeconds:F1}\n" +
+            opcUa.Run.Report(opcUa.Ticks);
 
         var path = Environment.GetEnvironmentVariable("MAIR_LOAD_OUTPUT");
         if (!string.IsNullOrWhiteSpace(path))
         {
-            await File.WriteAllTextAsync(path, summary, TestContextCancellation);
+            await File.WriteAllTextAsync(path, summary);
         }
 
-        // Assertions are the AC, not the performance figures: those belong in the report, and the
-        // targets are TARGET (unmeasured) until one exists.
-        Assert.True(emitted > 0, "no telemetry was emitted");
-        Assert.Equal(0, gaps);                      // L-01 / D-03: no undetected loss, and none induced
-        Assert.All(loops, l => Assert.True(l.ProtocolConnected));
-    }
+        // The per-protocol matrix in TEST_SPECIFICATIONS section 5 (OD-005). Coverage is reported,
+        // never asserted: it is a measurement, not a threshold.
+        AssertEmitsCanonical(modbus.Run, SourceProtocol.ModbusTcp);
+        AssertEverySkipIsFlagged(modbus.Run);
+        Assert.Equal(0, modbus.Run.Loops.Sum(l => l.ReadFailures));
 
-    private static CancellationToken TestContextCancellation => CancellationToken.None;
+        AssertEmitsCanonical(opcUa.Run, SourceProtocol.OpcUa);
+        AssertNoGapsAfterWarmUp(opcUa.Run, opcUa.WarmedUpAt);
+    }
 }

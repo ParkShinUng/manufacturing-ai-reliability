@@ -18,7 +18,10 @@ The baseline favors supported/LTS or mature stable releases over preview release
 | simulator, OPC UA server | `OPCFoundation.NetStandard.Opc.Ua.Server` | **1.5.378.176** | MIT (OPC Foundation MIT License 1.00) |
 | edge gateway, OPC UA client | `OPCFoundation.NetStandard.Opc.Ua.Client` | **1.5.378.176** | MIT |
 | both, configuration and certificates | `OPCFoundation.NetStandard.Opc.Ua.Configuration` | **1.5.378.176** | MIT |
-| simulator and gateway, Modbus TCP | `NModbus` | **3.0.83** | MIT |
+| simulator, Modbus TCP server | `NModbus` | **3.0.83** | MIT |
+
+The gateway's Modbus **client** has no package since 2026-09-21: NModbus's client reads block a
+thread-pool thread each (OD-006), and ADR-0020 was amended to an in-repository async FC04 reader.
 
 `OPCFoundation.NetStandard.Opc.Ua.Core` arrives transitively and is not referenced directly. The
 `OPCFoundation.NetStandard.Opc.Ua` **meta package is deliberately not used** — it has no framework

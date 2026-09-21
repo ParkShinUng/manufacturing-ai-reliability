@@ -6,11 +6,10 @@ namespace Mair.EdgeGateway.Tests;
 /// <summary>
 /// Closes the loophole Codex flagged when auditing the OD-005 measurement.
 /// <para>
-/// <see cref="OpcUaSubscription"/> assembles a sample when <c>SequenceNo</c> reports, using the
-/// latest known value of every other node. That is right for a node that does not change — a
-/// monitored item reports on change, so <c>State</c> would otherwise never complete a sample — but
-/// it means callback ordering could in principle pair a marker from tick N with a measurement from
-/// N-1. Coverage was measured; <b>atomicity was not</b>.
+/// <see cref="OpcUaSubscription"/> assembles a sample from the ten values that share the
+/// <c>SequenceNo</c> value's source timestamp (§1.3). Callback ordering, independent item sampling
+/// and uneven queues could all, under a weaker rule, pair a marker from step N with a measurement
+/// from N-1. Coverage was measured; <b>atomicity is checked here</b>, over the wire.
 /// </para>
 /// <para>
 /// A sample stitched from two model steps is not a reading the equipment ever produced, which puts
@@ -75,8 +74,19 @@ public sealed class OpcUaSampleCoherenceTests
         return port;
     }
 
-    [Fact]
-    public async Task AnAssembledSampleCarriesOneModelStepsValues()
+    /// <summary>
+    /// 120 ms is slower than the 100 ms publish, so it rarely queues more than one value per item -
+    /// Codex's point: it cannot catch a race it never provokes. 60 ms puts one to two steps in most
+    /// cycles; 20 ms is faster than the 50 ms sampling, so the server skips steps and items can
+    /// disagree about which ones they saw. Every emitted sample must still be one step's values.
+    /// The deterministic cases are in <see cref="OpcUaSampleAssemblerTests"/>.
+    /// </summary>
+    [Theory]
+    [InlineData(120, 40)]
+    [InlineData(60, 80)]
+    [InlineData(20, 200)]
+    [InlineData(0, 200)] // bursts: five steps back to back, then a pause - steps can share a clock reading
+    public async Task AnAssembledSampleCarriesOneModelStepsValues(int tickMs, int steps)
     {
         var equipment = new TickingEquipment();
         var pki = Path.Combine(Path.GetTempPath(), "mair-coh-" + Guid.NewGuid().ToString("N"));
@@ -91,7 +101,7 @@ public sealed class OpcUaSampleCoherenceTests
         // Drive a spread of model steps. The vibration channel changes on every tick under bearing
         // degradation, so a stitched sample would show a value that belongs to a different step.
         var expected = new Dictionary<ulong, (uint Epoch, double? Vibration)>();
-        for (var i = 0; i < 40; i++)
+        for (var i = 0; i < steps; i++)
         {
             equipment.Tick();
             server.NodeManager.Refresh("eq-001");
@@ -101,7 +111,7 @@ public sealed class OpcUaSampleCoherenceTests
                 expected[sample.Sequence] = (sample.SourceEpochMs, sample.VibrationRms);
             }
 
-            await Task.Delay(120);
+            await Task.Delay(tickMs > 0 ? tickMs : (i % 5 == 4 ? 150 : 0));
         }
 
         await Task.Delay(500); // let the last publishing cycle arrive
