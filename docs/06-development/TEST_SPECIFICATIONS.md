@@ -310,6 +310,27 @@ requirement was not relaxed. The run is repeated on the corrected rig, and the r
 `model_clock_bursts`, `longest_step_gap_ms` and gap-to-burst correlation, so a recurrence is
 attributable from the report alone.
 
+**Second official run, 2026-09-22 — PASSED.** Commit `249948a`, clean tree, 30 min per protocol,
+20 equipment. The report lives under the git-ignored `reports/load/`, so the figures are copied
+here:
+
+| | Modbus polling | OPC UA subscription |
+|---|---|---|
+| records | 360 020 | 359 916 |
+| distinct sequences | 356 386 | 359 916 |
+| duplicates | 3 634 | 0 |
+| coverage | 99.0 % | 100.0 % |
+| sequence gaps | 3 634, **every one flagged**, all single | **0** |
+| read failures | **0** | 0 |
+| loop overruns | 0 | 20, one per loop at start-up |
+| buffer drops | 0 | 0 |
+| assembler drops / late values | — | 0 / 0 |
+| model-clock bursts · longest step gap | 0 · 153 ms | 0 · 128 ms |
+
+The Modbus figures are equal-cadence phase drift, exactly as OD-005 describes: gaps and duplicates
+match one for one, and none is silent. These are measurements of one laptop on one commit, not the
+`NON_FUNCTIONAL_REQUIREMENTS.md` targets, which stay `TARGET (unmeasured)` (NFR-005).
+
 ## 5a. Phase 1 unit tests — implemented
 
 `src/dotnet/EquipmentSimulator.Tests/` (44 tests, `dotnet test src/dotnet/Mair.sln`).

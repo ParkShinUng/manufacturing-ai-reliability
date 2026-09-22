@@ -43,7 +43,7 @@ Equipment physics and degradation model · equipment state machine (T1–T12) ·
 > unhandled *gateway* exception; canonical telemetry is produced by the Edge Gateway, so Phase 1
 > cannot prove it.
 
-## Phase 2 — Edge Gateway + OPC UA / Modbus — **IN PROGRESS**
+## Phase 2 — Edge Gateway + OPC UA / Modbus — **COMPLETE** (2026-09-22)
 Simulator-side **protocol server endpoints** per `OT_PROTOCOL_MAPPING.md` · gateway client sessions ·
 normalisation · closed quality vocabulary and derived `quality.overall` · reconnect without process
 restart · bounded buffering with drop-oldest.
@@ -64,6 +64,16 @@ surfaced, is resolved.
 > partition counts, retention, auto-creation policy and producer settings in an implementation,
 > when `KAFKA_TOPOLOGY_AND_SEMANTICS.md` owns them and forbids auto-topic-creation precisely because
 > a wrong partition count breaks ordering.
+
+> **Completion record.** Codex's independent verification ran three rounds: REJECT (1 P0, 9 P1,
+> 1 P2), REJECT (2 P1), then ACCEPT_WITH_CONDITIONS, with both conditions applied. P0 = 0, P1 = 0,
+> and every finding is classified (`reviews/phase-2/`). OD-006 was decided by the product owner
+> along the way. `LOAD-001` passed on commit `249948a`, with a clean tree, on the second official
+> run; the first failed and was diagnosed (`TEST_SPECIFICATIONS.md` §5). The product owner asked
+> for it to be run before Phase 2 was recorded complete.
+>
+> What Phase 2 does **not** include: the Kafka binding of the egress port (Phase 3), the metrics
+> exporter (Phase 8), and the `factory.equipment-states.v1` record.
 
 ## Phase 3 — Kafka Event Backbone
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset
