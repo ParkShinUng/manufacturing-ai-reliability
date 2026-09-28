@@ -75,17 +75,36 @@ surfaced, is resolved.
 > What Phase 2 does **not** include: the Kafka binding of the egress port (Phase 3), the metrics
 > exporter (Phase 8), and the `factory.equipment-states.v1` record.
 
-## Phase 3 — Kafka Event Backbone
+## Phase 3 — Kafka Event Backbone — **NOT READY, not requested**
+
+> **Definition-of-Ready check, 2026-09-23 — NOT READY.** Codex challenged it read-only
+> (`reviews/phase-3/`) and found ten items, three of them P0.
+>
+> **Resolved 2026-09-28** by the product owner, each after a second Codex challenge of the intended
+> decision: `OD-007` (AC-003 split — this phase proves `AC-045`), `OD-008` (the equipment-state
+> stream: 2 s refresh, `gatewayEpoch` in the duplicate identity, `compact`-only retention with a
+> tombstone rule), `OD-009` (Phase 3 owns the shared consume-validate-DLQ component).
+>
+> Applying them was verified by Codex in turn (`ACCEPT_WITH_CONDITIONS`), and its four conditions
+> are in: `AC-027` now states the shared-component scope, `KAFKA-001` and `KAFKA-002` specify
+> AC-026 and AC-027 (`TEST_SPECIFICATIONS.md` §4b), the shared consume-validate-DLQ component is a
+> named Phase 3 responsibility (`KAFKA_EVENT_BACKBONE.md` §2.1), and `DEC-007` records the amended
+> identity.
+>
+> **Still blocking:** an **accepted ADR** selecting the Kafka client library and local broker
+> runtime. Major dependency, so a Codex challenge is mandatory before it can be accepted.
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset
 commit · DLQ and redrive · lag and record-age metrics · replay on projector groups only ·
 **binding the gateway's egress port to `factory.telemetry.v1` and `factory.equipment-states.v1`**
 (FR-010).
-**Proof:** AC-003, AC-026, AC-027.
+**Proof:** **AC-045** (replay mechanics), AC-026, AC-027. `AC-003`'s safety claim is Phase 6 and
+the read-model rebuild is Phase 4 (OD-007).
 
 ## Phase 4 — Operational Data + Operations API
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.
-**Proof:** AC-006, AC-028, AC-029, AC-030.
+**Proof:** AC-006, AC-028, AC-029, AC-030, **AC-046** (read models rebuild byte-identically from a
+replay, OD-007).
 
 ## Phase 5 — AI Training + Inference
 Reproducible dataset generation · `mair_ml_core` shared features · anomaly and failure/RUL
@@ -96,7 +115,7 @@ baselines · MLflow experiments and registry · prediction service with `deploym
 ## Phase 6 — AI Safety Supervisor
 13 canonical gates in order · full `gateResults` recording · reason codes · control lease and
 heartbeat · `seekToEnd` restart semantics · fallback requests.
-**Proof:** AC-005, AC-015, AC-016, AC-017.
+**Proof:** AC-005, AC-015, AC-016, AC-017, **AC-003** (a replay moves no equipment — the whole F11 claim, on the first phase that can observe the Supervisor's command intent; OD-007).
 **Note:** AC-011 (Supervisor death) **cannot be demonstrated until Phase 7 delivers the watchdog.**
 
 ## Phase 7 — Control Service

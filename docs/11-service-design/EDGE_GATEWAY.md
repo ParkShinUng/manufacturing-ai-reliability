@@ -56,6 +56,24 @@ contract's *data shape* with its *transport realisation*, and would have dragged
 retention and producer settings into Phase 2 where an implementer would have chosen them instead of
 `KAFKA_TOPOLOGY_AND_SEMANTICS.md`.
 
+### 5.2 Equipment-state records (OD-008)
+
+The gateway publishes its **observed** state for each equipment:
+
+| | Rule |
+|---|---|
+| On every observed transition | one record, carrying `previousState` and `transitionId` |
+| Otherwise | a **refresh** every **2 s**, carrying neither — nothing transitioned |
+| `occurredAtUtc` on a refresh | the **observation** time, not the last transition's. Gate 10 measures observation age (`SAFETY_SUPERVISOR.md`), and a transition timestamp would make a stable machine read as stale |
+| `stateSequence` | increments per record, per equipment; restarts with the process |
+| `gatewayEpoch` | milliseconds since the Unix epoch at process start; identity is `(equipmentId, gatewayEpoch, stateSequence)` |
+| Decommissioning | a **tombstone** under the equipment's key when it leaves the configured inventory — the topic is `compact` with no deletion, so nothing else removes it |
+
+The interval is bound by `stateRefreshInterval + worst-case produce-to-consume latency +
+clockSkewBudget < 10 s`, gate 10's limit. At 2 s that leaves 7.75 s for latency, and costs
+`equipment / 2` records a second — 10/s at the demo profile, 125/s at `LOAD-002`'s 250 machines,
+against 2 500 telemetry events/s at the same scale.
+
 ## 6. Contracts
 `contracts/jsonschema/v1/telemetry.schema.json`, `equipment-state.schema.json`;
 `docs/03-contracts/OT_PROTOCOL_MAPPING.md`.

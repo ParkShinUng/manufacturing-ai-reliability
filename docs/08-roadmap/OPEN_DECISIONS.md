@@ -397,3 +397,197 @@ The Modbus AC-001 real-path test and the Modbus half of `LOAD-001` measured this
 left **failing when they failed** rather than relaxed: a test weakened to pass around a known defect
 is the silent loss D-03 forbids, moved into the test suite. They are the tests that now have to
 pass on the new reader, unchanged.
+
+---
+
+# OD-007 — RESOLVED 2026-09-28 — option B — `AC-003` cannot be proven in the phase that is asked to prove it
+
+> Raised 2026-09-23 by the Phase 3 Definition-of-Ready check and confirmed by Codex
+> (`reviews/phase-3/`, `P3-DOR-001`, `P3-DOR-002`). Product owner's decision: it changes what a
+> phase is allowed to close on.
+
+## The problem
+
+`IMPLEMENTATION_PLAN.md` lists **AC-003** in Phase 3's proof list. AC-003 requires two things:
+
+1. a replayed Kafka range rebuilds **read models** identically, and
+2. the **Safety Supervisor** issues no command as a result (F11).
+
+PostgreSQL projections and read models are **Phase 4**. The Safety Supervisor is **Phase 6**. The
+Control Service that would issue a command is **Phase 7**. Phase 3 can build the replay policy, the
+consumer groups and the offset semantics that make both claims *possible*, and can prove none of it.
+
+`FAIL-KAFKA-001` in `TEST_SPECIFICATIONS.md` repeats the same obligation, so the defect exists in two
+places and fixing only the plan would leave the test specification demanding absent services.
+
+This is the same failure mode as `AC-001` at Phase 1, which was moved to Phase 2 because canonical
+telemetry needs a gateway. It was caught then; this one survived because AC-003's dependency is on
+two services rather than one.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | Move `AC-003` wholesale to the last phase it depends on (Phase 6) | honest, but Phase 3 and Phase 4 then close with a replay mechanism nothing has checked, and a defect in it surfaces three phases later |
+| **B** | **Split by the capability each half needs.** Phase 3 proves what replay *is* — a projector group can be re-driven over a known offset range, offsets are committed manually, the Supervisor's group is configured not to replay. Phase 4 proves read models rebuild identically. Phase 6 proves the Supervisor issues no command | AC traceability churn: one criterion becomes three, and `FAIL-KAFKA-001` splits with it |
+| **C** | Pull the projector forward into Phase 3 | Phase 3 grows a database and a read model, and the phase dependency story ("Kafka first, consumers after") stops being true |
+
+**Recommendation: B.** Each half is proven by the first phase that *can* prove it, which is the rule
+`AC-001` already set. A leaves the longest gap between building a mechanism and testing it, and C
+buys nothing except an earlier date.
+
+## Decision — B, with the conditions Codex attached
+
+Codex challenged the intended decision before it was recorded
+(`reviews/phase-3/CODEX_OD_DECISION_CHALLENGE_raw.md`) and returned `SOUND_WITH_CONDITIONS`. All
+three conditions are applied:
+
+1. **One criterion still owns F11** (P0 in the challenge). Splitting a safety claim into three
+   thirds that each pass separately is how the whole stops being anybody's job. `AC-003` therefore
+   keeps the whole claim — *replay moves no equipment* — and moves to **Phase 6**, the first phase
+   where the Supervisor's command intent can be observed. `FAILURE_MODEL.md`'s traceability row for
+   "replay cannot move equipment" points at its test, not at the mechanics tests.
+2. **New numeric AC IDs, not `AC-003a/b/c`.** `ac_traceability.mjs` matches `AC-\d{3}`, so lettered
+   parts are invisible to it: Phase 3 would appear to cover "AC-003" while the untested parts hid
+   behind a checker that cannot see them.
+3. **Phase 3's obligation is named, not gestured at** — see `AC-045`.
+
+| Criterion | Phase | Claim |
+|---|---|---|
+| **`AC-045`** *(new)* | 3 | a replay-eligible group can be rewound over a known offset range and consumes exactly those records in key order; offsets commit only after successful processing; the Supervisor's group is non-replay-eligible by configuration |
+| **`AC-046`** *(new)* | 4 | replaying a known range into projection groups rebuilds read models byte-identically |
+| **`AC-003`** *(amended)* | 6 | during and after a replay the Safety Supervisor issues **no** command, and no equipment moves (F11) |
+
+---
+
+# OD-008 — RESOLVED 2026-09-28 — option B — the equipment-state stream has three holes that are really one decision
+
+> Raised 2026-09-23 by the Phase 3 Definition-of-Ready check (`P3-DOR-003`, `P3-DOR-005`,
+> `P3-DOR-006`). Two of the three are **P0**. They are written as one decision because deciding them
+> separately is what produced the contradiction.
+
+## The problem
+
+**1. `stateSequence` has no restart semantics.** `EVENT_CONTRACTS.md` §2 and `DEC-007` assign it to
+the gateway, per equipment. `KAFKA_TOPOLOGY_AND_SEMANTICS.md` §7 makes `(equipmentId, stateSequence)`
+the **duplicate identity**. The gateway holds no durable state — by design; its buffer is in memory
+— so after a restart the counter starts again, and a new record collides with an old one's identity.
+A consumer doing what the contract tells it to do then **discards current state as a duplicate**.
+
+**2. Nothing says when a state record is emitted.** The obvious reading is "on every observed
+transition". That collides with the Safety Supervisor's **gate 10**, which fails on
+`equipment state stale > 10 s` (`SAFETY_SUPERVISOR.md`). A machine that runs normally for an hour
+has no transition in that hour, so its state is stale after ten seconds and the Supervisor falls
+back — permanently, on healthy equipment. Transition-only emission cannot satisfy a freshness gate.
+
+**3. The topic's retention deletes the state it is supposed to preserve.**
+`factory.equipment-states.v1` is `compact+delete` with **7 d** retention, and the Supervisor "must
+read it in full to learn current equipment state" (§5). Compaction keeps the last record per key;
+`delete` removes segments older than the retention regardless. A machine stable for more than seven
+days loses its only record, and a Supervisor starting afterwards learns nothing about it.
+
+The three are one decision: the emission rule sets what freshness the gate can rely on, the
+retention has to hold whatever the emission rule leaves as the last record, and the identity has to
+survive a restart in between.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | Transition-only emission · gateway persists the counter across restarts · retention `compact` only | the gateway acquires **durable state**, which contradicts its design and adds a recovery path to specify and test; gate 10 still has no freshness source, so it needs a separate contract |
+| **B** | **Transition emission plus a periodic refresh inside the gate's budget** · the record carries a **gateway epoch** alongside `stateSequence`, and duplicate identity becomes `(equipmentId, gatewayEpoch, stateSequence)` · retention `compact` only, no `delete` | schema and identity change (one field, one contract line); a steady 20-machine deployment adds a few records a second, which is negligible next to 200 telemetry events a second |
+| **C** | Emit a state record with every telemetry sample | 10 Hz × 20 machines on a state topic, for information the telemetry record already carries; compaction churn for no gain |
+
+**Recommendation: B**, and the epoch half is not a new idea — it is exactly what `OD-004` decided for
+telemetry. There, `sequence` alone could not distinguish a restart from data loss, so `sourceEpochMs`
+was added and the **pair** carries the meaning. The same shape applies here: a counter that resets is
+only safe when something else says it reset.
+
+## Decision — B, with every number fixed
+
+Codex returned `SOUND_WITH_CONDITIONS` and required four things to be specified rather than left to
+the implementer. They are specified here and applied to the contracts.
+
+**1. Refresh interval — 2 s.** The constraint, not the number, is the contract:
+
+```
+stateRefreshInterval + worst-case produce-to-consume latency + clockSkewBudget  <  10 s
+```
+
+`clockSkewBudget` is **±250 ms** (`TIME_AND_DATA_QUALITY.md`), gate 10's staleness limit is **10 s**
+(`SAFETY_SUPERVISOR.md`). At 2 s the budget left for end-to-end latency is 7.75 s, which is ample
+against the 1 200 ms P95 in `L-07`. Volume is `equipment / interval`: **10 records/s** at the
+20-machine profile and **125 records/s** at `LOAD-002`'s 250 — against 2 500 telemetry events/s at
+the same scale, which is where the real load is. The interval must be re-checked at `LOAD-002`,
+because a gate that fails under load is a gate that fails.
+
+**2. `gatewayEpoch` — the paired signal.** Integer milliseconds since the Unix epoch, taken **once
+at gateway process start**. It changes exactly when `stateSequence` can restart, and it is **not an
+ordering signal**: two gateways' epochs are not comparable, and a consumer must never sort by it.
+Duplicate identity becomes `(equipmentId, gatewayEpoch, stateSequence)`. The Kafka **key stays
+`equipmentId`**, so compaction is unaffected — the epoch changes deduplication, not retention.
+The schema is `additionalProperties: false`, so this is a contract change, not prose: schema,
+example, topology and the `EVENT_CONTRACTS.md` scope table all move together (`ADR-0017`).
+
+**3. Retention — `compact` only, and a tombstone rule.** Removing `delete` fixes the
+current-state-ages-out defect and creates the cost Codex named: decommissioned equipment would
+never disappear. The **gateway** — the topic's only producer — writes a **tombstone** (a null value
+under the equipment's key) when an equipment leaves its configured inventory. Without that rule,
+"read the topic in full to learn current state" eventually returns machines that no longer exist.
+
+**4. A refresh is an observation, not a replayed transition.** A refresh record carries a **fresh**
+`occurredAtUtc` and `ingestTimeUtc`, and omits `previousState` and `transitionId`, which describe a
+transition that is not happening. Gate 10 measures the **age of the observation** — wall clock minus
+`occurredAtUtc`, allowing the skew budget — not the age of the last transition. Measuring transition
+age is precisely the reading that makes a healthy, stable machine look stale.
+
+---
+
+# OD-009 — RESOLVED 2026-09-28 — option A — `AC-027` describes consumer behaviour, and Phase 3 has no consumers
+
+> Raised 2026-09-23 by the Phase 3 Definition-of-Ready check (`P3-DOR-008`).
+
+## The problem
+
+`AC-027` requires a schema-invalid record to reach the DLQ **on the first attempt** with all required
+headers. That is behaviour of an application consumer: the broker does not validate JSON Schema, and
+Phase 3's deliverables are topics, producers, offset semantics and redrive tooling. The first real
+consumers arrive with the projector in Phase 4.
+
+Phase 3 can create the DLQ topics and prove they exist. It cannot prove anything routes to them.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Phase 3 owns a shared consume-validate-DLQ component**, proven against a test consumer, and every later consumer is built on it | scope added to Phase 3 now, and the component has to be right before any consumer depends on it |
+| **B** | Each consumer implements DLQ behaviour; `AC-027` moves to Phase 4 with the first one | the rule gets re-implemented per consumer, which is how two consumers end up disagreeing about what "invalid" means |
+| **C** | Introduce a schema registry and validate at the broker edge | a new dependency and its own ADR, plus a second source of truth for schemas that `ADR-0017` says are authoritative in this repository |
+
+**Recommendation: A.** The poison-message rule and the DLQ header set are already specified once;
+implementing them once matches that. B is cheaper this week and is the option most likely to produce
+a silent divergence later, which is the failure this repository keeps finding.
+
+## Decision — A, bounded so it cannot become a framework
+
+Codex returned `SOUND_WITH_CONDITIONS`, with the objection worth keeping: a shared component built
+before a single consumer exists is the shape of speculative abstraction, which this repository
+otherwise refuses. It is justified **only** under these limits:
+
+- The component is the **production consume path**, not a test helper: every later consumer —
+  projector, feature builder, Supervisor — is built on it, and that adoption is a condition of
+  those phases, not an aspiration.
+- Its scope is exactly the rules already written in `KAFKA_TOPOLOGY_AND_SEMANTICS.md` §9 and
+  nothing else: validate against the authoritative JSON Schema · schema-invalid → DLQ on the
+  **first** attempt, no retry · required DLQ headers · commit the source offset only **after** the
+  DLQ produce succeeds · no automatic redrive.
+- The Supervisor's exception — reject first, DLQ second, never "skip and continue" — stays Phase 6
+  and is not built into the shared path.
+- `AC-027` is proven against a consumer that runs **this** component on a real topic, and asserts
+  first-attempt routing, the full header set, and that downstream processing did **not** run. A
+  test-only path would demonstrate the behaviour rather than prove the criterion.
+
+## Not part of this decision
+
+The Safety Supervisor's exception — reject first, then DLQ, never "skip and continue"
+(`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §9) — stands whichever option is chosen, and is Phase 6 work.

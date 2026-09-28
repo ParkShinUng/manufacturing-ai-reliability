@@ -12,6 +12,7 @@
     "equipmentId",
     "state",
     "stateSequence",
+    "gatewayEpoch",
     "occurredAtUtc",
     "ingestTimeUtc",
     "producer",
@@ -72,6 +73,11 @@
       "type": "integer",
       "minimum": 0,
       "description": "Scope: per equipmentId, assigned by the EDGE GATEWAY (not the equipment). Named distinctly from telemetry `sequence`, which is equipment-assigned, so the two can never be confused."
+    },
+    "gatewayEpoch": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Milliseconds since the Unix epoch, taken once at gateway process start (OD-008). Pairs with stateSequence, which restarts whenever the gateway does: duplicate identity is (equipmentId, gatewayEpoch, stateSequence), so a restarted counter cannot collide with records from a previous run. NOT an ordering signal - epochs from different gateways are not comparable and a consumer must never sort by it."
     },
     "observedBy": {
       "type": "string",

@@ -22,7 +22,7 @@ Pattern: `factory.<aggregate-plural>.v<major>`
 | `factory.predictions.v1` | prediction-service | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **24 h** | delete |
 | `factory.safety-decisions.v1` | safety-supervisor | operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | delete |
 | `factory.control-outcomes.v1` | control-service | operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | delete |
-| `factory.equipment-states.v1` | edge-gateway | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | compact+delete |
+| `factory.equipment-states.v1` | edge-gateway | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **∞** | compact |
 | `factory.model-deployments.v1` | mlops-publisher | safety-supervisor, operations-projector | `modelName` | **1** | 1 / 3 | **∞** | compact |
 | `factory.faults.v1` | equipment-simulator | operations-projector | `equipmentId` | **3** | 1 / 3 | **7 d** | delete |
 
@@ -140,6 +140,17 @@ and on fallback, and must re-earn AI authority through transition M5.
 compacted state topics that the Supervisor must read in full to learn current equipment state and
 current model authorisation.
 
+**Why `factory.equipment-states.v1` is `compact` and not `compact+delete` (OD-008).** It was
+`compact+delete` with 7 d retention, which contradicts the sentence above: `delete` removes segments
+by age regardless of compaction, so a machine that stays in one state for longer than the retention
+loses its last record, and a Supervisor starting afterwards learns nothing about it. Compaction
+alone keeps exactly one record per `equipmentId`, which is bounded by the number of machines.
+
+Retention without deletion needs a way for equipment to leave. The **gateway** — the topic's only
+producer — writes a **tombstone** (a null value under the equipment's key) when an equipment leaves
+its configured inventory. Without it, "read the topic in full" eventually reports machines that no
+longer exist.
+
 Auto-commit is forbidden because it commits offsets for records that may not have been processed,
 which converts at-least-once into silent at-most-once on a crash.
 
@@ -153,7 +164,7 @@ A duplicate is defined **per topic**, so consumers do not have to guess:
 | `factory.predictions.v1` | `predictionId` |
 | `factory.safety-decisions.v1` | `decisionId` |
 | `factory.control-outcomes.v1` | `commandId` |
-| `factory.equipment-states.v1` | `(equipmentId, stateSequence)` |
+| `factory.equipment-states.v1` | `(equipmentId, gatewayEpoch, stateSequence)` — the epoch is what makes a restarted counter safe (OD-008) |
 | `factory.model-deployments.v1` | `(partitionKey, modelVersion, authorizationSequence)`; WATERMARK records use the sentinel key `__watermark__` so liveness records compact to one retained row and never displace a model's authorization |
 | `factory.faults.v1` | `faultInjectionId` |
 

@@ -39,6 +39,10 @@ invites exactly the false cross-producer ordering assumption it warns about. `se
 only where a consumer genuinely needs gap/order detection, each with an explicit scope:
 - `factory.telemetry.v1` → `sequence`, per equipment, **assigned by the equipment** (so gateway-side
   loss is detectable — a gateway-assigned sequence would be continuous even when samples were dropped);
+- *(amended 2026-09-28 by OD-008: the **identity** is `(equipmentId, gatewayEpoch, stateSequence)`.
+  `stateSequence` keeps the scope and ownership below; `gatewayEpoch` exists because the counter
+  restarts with the gateway process, and a counter that resets is only safe when something else says
+  it reset.)*
 - `factory.equipment-states.v1` → `stateSequence`, per equipment, **assigned by the gateway**, named
   distinctly so the two can never be confused.
 

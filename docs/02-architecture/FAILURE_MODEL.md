@@ -98,5 +98,5 @@ Full ownership, transitions, guards, precedence, and restart behaviour are in
 | No CI failure affects control | F05, F06, F12, F13, F14, F15, F27, F32 rows + `FAIL-KAFKA-001`, `FAIL-AI-001` |
 | Supervisor death does not strand equipment | F23 + watchdog test |
 | A late command cannot undo a fallback | F24 + epoch fencing test |
-| Replay cannot move equipment | F11 + `FAIL-KAFKA-001` |
+| Replay cannot move equipment | F11 + `FAIL-KAFKA-002` (**AC-003**, Phase 6). `FAIL-KAFKA-001` covers the Phase 3 mechanics only, and does not carry this claim (OD-007) |
 | A quarantine cannot be silently lost | F28 + watermark timeout test |

@@ -22,6 +22,7 @@ gap or order detection, each with an explicit scope:
 |---|---|---|---|---|
 | `sequence` | `factory.telemetry.v1` | per `equipmentId` | **the equipment** | a gateway-assigned sequence would stay continuous even when the gateway dropped samples, making loss undetectable |
 | `stateSequence` | `factory.equipment-states.v1` | per `equipmentId` | **the gateway** | distinctly named so it can never be confused with telemetry `sequence` |
+| `gatewayEpoch` | `factory.equipment-states.v1` | per gateway process | **the gateway** | `stateSequence` restarts when the gateway does, and duplicate identity `(equipmentId, gatewayEpoch, stateSequence)` is what keeps a restarted counter from colliding with the previous run (OD-008). Same shape as telemetry's `sequence` + `sourceEpochMs` pair (OD-004). **Not** an ordering signal |
 
 `producer` is retained in the envelope because the `causationId` chain cannot be audited across
 services without knowing which service emitted each link (NFR-002).
@@ -258,3 +259,15 @@ silence. `autonomous: true` and `authenticatedSource` is the Control Service's o
 - A field name must never be reused with new semantics.
 - `schemaVersion` mismatch on a **major** version is rejected by the consumer, not coerced.
 - Enum values may be **appended**; renumbering or removing a value is breaking.
+
+**Amendments before a schema has a producer.** A **required** field added to `v1` is not an additive
+optional field, so the rule above would normally force `v2`. It does not apply to a schema nothing
+has ever produced: there is no deployed producer, no consumer, and no record in any topic to be
+incompatible with. Such an amendment is contract **authoring**, not contract evolution, and is
+recorded here so the exception can never be claimed retroactively:
+
+| Date | Schema | Change | Why it was not a `v2` |
+|---|---|---|---|
+| 2026-09-28 | `equipment-state.schema.json` | `gatewayEpoch` added as **required** (OD-008) | `factory.equipment-states.v1` is produced in Phase 3, which has not started. Nothing has emitted or consumed one |
+
+Once a schema's first producer ships, this table closes for it and the rules above are the only path.

@@ -56,13 +56,26 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
 
 ## Event platform
 
-- **AC-003 → FR-011** — Replay a known Kafka range into **projection** consumer groups and verify
-  read models rebuild identically, **and** that the Safety Supervisor does not re-issue any command
-  (F11).
+- **AC-003 → FR-011** *(scope narrowed 2026-09-28 by OD-007; verified in **Phase 6**)* — During and
+  after a replay of a known Kafka range, the Safety Supervisor issues **no** command and no equipment
+  moves (F11). This is the whole safety claim, kept on one criterion deliberately: it was previously
+  bundled with two mechanical claims that Phase 3 and Phase 4 prove, and a safety guarantee split
+  across three phases is owned by none of them.
+- **AC-045 → FR-011** *(new 2026-09-28, OD-007; verified in **Phase 3**)* — A **replay-eligible**
+  consumer group can be rewound over a known offset range and consumes exactly those records in key
+  order; offsets are committed only **after** successful processing; the Safety Supervisor's group
+  is non-replay-eligible **by configuration**, and a rewind attempt against it is refused rather
+  than silently honoured.
+- **AC-046 → FR-011** *(new 2026-09-28, OD-007; verified in **Phase 4**)* — Replaying a known offset
+  range into **projection** consumer groups rebuilds the read models **byte-identically**.
 - **AC-026 → FR-010/012** — Every topic exists with the documented partition count, replication
   factor, and retention; the bootstrap job is idempotent and **asserts partition-count immutability**.
-- **AC-027 → FR-011** — A schema-invalid record goes to the DLQ on the **first** attempt with all
-  required DLQ headers; redrive is operator-initiated only.
+- **AC-027 → FR-011** *(scope stated 2026-09-28 by OD-009)* — A schema-invalid record goes to the
+  DLQ on the **first** attempt with all required DLQ headers; redrive is operator-initiated only.
+  Proven against the **shared production consume-validate-DLQ component**, not a test-only path:
+  the source offset is committed **only after** the DLQ produce succeeds, downstream processing does
+  **not** run for that record, and no redrive happens automatically. Every later consumer is built
+  on that component, which is what makes one proof cover them.
 - **AC-024 → FR-020/021/022** — Every prediction carries model name, version, run ID,
   `deploymentStage`, `featureSchemaVersion`, confidence, and `validSampleRatio`.
 - **AC-025 → FR-021** — When `validSampleRatio < 0.8` on any safety-required channel, **no

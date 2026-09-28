@@ -7,6 +7,7 @@
   "previousState": "RUNNING",
   "transitionId": "T7",
   "stateSequence": 87,
+  "gatewayEpoch": 1789200000000,
   "observedBy": "edge-gateway@gw-1",
   "aiEligible": false,
   "activeConditions": [

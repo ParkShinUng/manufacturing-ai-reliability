@@ -116,7 +116,7 @@ local invariant is sufficient to prevent concurrent validity — no distributed 
 | No predictions arriving | gate 3 fails → `PREDICTION_STALE` → fallback |
 | Prediction unparseable | **reject** `PREDICTION_UNPARSEABLE`, equipment stays safe, **then** DLQ |
 | Older prediction after newer | discard, `PREDICTION_SUPERSEDED` |
-| Equipment state stale > 10 s | gate 10 fails → fallback |
+| Equipment state stale > 10 s | gate 10 fails → fallback. **Age is measured on the observation** — wall clock minus `occurredAtUtc`, allowing the ±250 ms skew budget — not on the last transition. The gateway refreshes every 2 s whether or not the state changed (OD-008); measuring transition age instead would make a healthy, stable machine look stale within ten seconds |
 | Watermark missing > 90 s | **all models unauthorized** → `MODEL_AUTHORIZATION_STALE` → fallback |
 | Control Service unreachable | log, alert, **stop commanding**; its watchdog will act |
 | `COMMAND_EPOCH_STALE` returned | re-acquire lease, **re-derive from current telemetry**; never resend |

@@ -127,11 +127,33 @@ acceptance occurs.
 **Assert:** first `APPLIED`, second `DUPLICATE` with the **prior** result returned ·
 `duplicate_command_total` increases · equipment state changes **at most once** (D-01).
 
-### FAIL-KAFKA-001 — broker restart and replay → AC-003
-**Trigger:** restart the broker; then replay a known offset range into the projector group.
+### FAIL-KAFKA-001 — broker restart and replay mechanics → AC-045 *(Phase 3)*
+**Trigger:** restart the broker; then rewind a **replay-eligible** consumer group over a known
+offset range.
 **Assert:** gateway buffers and drops **oldest** only · `telemetry_dropped_total` is counted, not
-silent · consumers resume ≤ 30 s · projections rebuild byte-identically · **the Supervisor issues no
-command as a result of replay** · control unaffected throughout (F06, F11).
+silent · consumers resume ≤ 30 s (F06) · the rewound group consumes **exactly** the records in that
+range, in key order · offsets commit only **after** successful processing · a rewind attempt against
+`cg.safety-supervisor.v1` is **refused**, not silently honoured (DEC-002, ADR-0012).
+
+*Split 2026-09-28 by OD-007.* This test previously also asserted that read models rebuild
+identically and that the Supervisor issues no command — neither of which exists in Phase 3. Those
+are `PROJ-001` and `FAIL-KAFKA-002` below.
+
+### FAIL-KAFKA-002 — replay moves no equipment → AC-003 *(Phase 6)*
+**Setup:** Supervisor running, mode `AI_ASSISTED`, gates passing, a known range of historical
+predictions on `factory.predictions.v1`.
+**Trigger:** replay that range.
+**Assert:** the Supervisor issues **no** command as a result (F11) · no `controlEpoch` advances ·
+the applied rate does not move · any late command carrying a pre-replay epoch is refused
+`COMMAND_EPOCH_STALE` · the audit trail shows the replayed records were consumed and **inert**.
+
+**This is the whole safety claim, on one criterion.** It is the test `FAILURE_MODEL.md` names for
+"replay cannot move equipment"; the mechanics tests above cannot stand in for it.
+
+### PROJ-001 — read models rebuild from a replay → AC-046 *(Phase 4)*
+**Trigger:** replay a known offset range into the projection consumer groups.
+**Assert:** every read model is **byte-identical** to its pre-replay content · the rebuild is
+idempotent under a second replay of the same range · no projection writes outside its own tables.
 
 ### FAIL-MODEL-001 — quarantine propagation → AC-033 *(new)*
 **Trigger:** quarantine the running model in MLflow.
@@ -240,6 +262,39 @@ Cases 3, 4 and 5 are the point. A detector that flags every `sequence` decrease 
 cries wolf on every restart; one that suppresses every decrease passes cases 1 and 3 and **hides
 real loss** in cases 4 and 5. Only the paired signal separates them, which is why OD-004 had to add
 `SourceEpochMs` to the OPC UA address space before this test could exist at all.
+
+## 4b. Phase 3 Kafka test specifications
+
+Added 2026-09-28. `AC-026` and `AC-027` were listed in §7a as unspecified, and the Definition-of-Ready
+check made writing them a condition of starting Phase 3.
+
+### KAFKA-001 — topics exist as documented, and the bootstrap is idempotent → AC-026
+**Setup:** a broker with no `factory.*` topics.
+**Trigger:** run the bootstrap job; run it a **second** time unchanged; then run it once more with
+the partition count of one topic altered in its input.
+**Expected:** the first run creates every topic in the §2 register; the second changes nothing; the
+third **fails loudly**.
+**Assert:** for all 7 topics the partition count, replication factor, retention and cleanup policy
+equal the register — including `factory.equipment-states.v1` at `compact` with **no** deletion
+(OD-008) · the second run makes **no** change and reports success · the third run **refuses** and
+exits non-zero with the topic named, because a changed partition count silently re-keys a keyed
+topic and destroys per-key ordering (§4) · no topic is auto-created by a producer or consumer at any
+point in the run.
+
+### KAFKA-002 — a schema-invalid record is DLQ'd on the first attempt → AC-027
+**Setup:** a real broker and topic, a consumer built on the **shared consume-validate-DLQ
+component** (OD-009) with a downstream handler that records every invocation.
+**Trigger:** produce one record that fails its JSON Schema, followed by one valid record.
+**Expected:** the invalid record is routed to `<topic>.dlq` immediately; the valid one is processed
+normally.
+**Assert:** the DLQ record carries the **original payload** and every required header (§9) · it is
+produced on the **first** attempt — the consumer's retry counter for it is zero · the source offset
+is committed **only after** the DLQ produce succeeds, so a crash in between replays the record
+rather than losing it · the downstream handler was **not** invoked for the invalid record · nothing
+redrives automatically · the following valid record is processed, proving the consumer did not stall.
+
+**Negative case, required:** a valid record must **not** reach the DLQ. Without it, a component that
+DLQ'd everything would pass.
 
 ## 5. Load test specifications
 
@@ -406,7 +461,6 @@ becoming a permanent excuse:
 
 | AC | Phase |
 |---|---|
-| AC-026, AC-027 | 3 |
 | AC-006, AC-028, AC-029, AC-030 | 4 |
 | AC-008, AC-024, AC-025, AC-032 | 5 |
 | AC-016, AC-017 | 6 |

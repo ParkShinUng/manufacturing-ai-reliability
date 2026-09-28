@@ -11,9 +11,30 @@ outcomes, states, and model authorizations (ADR-0001).
 Durable ordered storage per partition; consumer-group isolation; replay for projection groups;
 compaction for state topics; lag visibility; DLQ topics.
 
+### 2.1 The shared consume-validate-DLQ component (OD-009)
+
+Phase 3 also delivers the **one** consumer path every later consumer is built on — the projector,
+the feature builder, the Supervisor. It exists because `AC-027` is consumer behaviour and the rules
+it must follow are written once in `KAFKA_TOPOLOGY_AND_SEMANTICS.md` §9; implementing them per
+consumer is how two consumers end up disagreeing about what "invalid" means.
+
+Its scope is exactly those rules and nothing more:
+
+- validate each record against its **authoritative JSON Schema** (`ADR-0017`);
+- a schema-invalid record goes to `<topic>.dlq` on the **first** attempt, with no retry;
+- every required DLQ header is set;
+- the source offset is committed **only after** the DLQ produce succeeds;
+- **no** automatic redrive — that is operator-initiated (§9).
+
+Adopting it is a condition of the phases that add consumers, not a recommendation. It is **not** a
+consumer framework: no routing, no handler registry, no configuration surface beyond the topic, the
+schema and the handler.
+
 ## 3. Non-responsibilities
 **Not a command transport** (ADR-0009). Not a database. Not a source of truth for equipment state
-beyond its compacted projection. Provides no exactly-once effect guarantee (MASTER_SPEC principle 6).
+beyond its compacted projection. The shared consumer component in §2.1 is **not** a place for
+business logic: it validates, routes invalid records to the DLQ, and commits — a handler's own
+failures are the handler's, and the Supervisor's reject-then-DLQ exception (§9) stays in Phase 6. Provides no exactly-once effect guarantee (MASTER_SPEC principle 6).
 
 ## 4. Dependencies / classification
 Kafka is **CONTROL-INDEPENDENT** (F06). Its total loss must not prevent a setpoint being held or
@@ -77,9 +98,10 @@ No service holds write ACLs to a topic it does not produce.
 2 500 telemetry ev/s at load profile; P95 produce ≤ 20 ms; broker restart recovery ≤ 30 s.
 
 ## 19. Test strategy
-Contract tests per topic; replay test (AC-003) proving **projector** groups replay while the
+Contract tests per topic; replay test (**AC-045**) proving a **replay-eligible** group replays while the
 Supervisor does not; broker restart (`FAIL-KAFKA-001`); DLQ redrive; partition-count immutability
 assertion in the bootstrap job.
 
 ## 20. Acceptance criteria
-AC-003, AC-026, AC-027.
+**AC-045**, AC-026, AC-027. `AC-003` (replay moves no equipment) is Phase 6 and `AC-046` (read
+models rebuild byte-identically) is Phase 4 — see OD-007.
