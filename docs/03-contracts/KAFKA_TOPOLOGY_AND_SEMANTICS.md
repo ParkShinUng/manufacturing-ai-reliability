@@ -233,12 +233,20 @@ All values are bounded, observable, and jittered (`FAILURE_MODEL.md` retry rule)
 |---|---|---|---|---|---|
 | OPC UA | 10 s | 1 s | infinite reconnect | 250 ms → 8 s ×2 ±20 % | no (must keep trying) |
 | Modbus TCP | 5 s | 250 ms | infinite reconnect | 250 ms → 8 s ×2 ±20 % | no |
-| Kafka producer | 10 s | 30 s delivery | 5 | 100 ms → 3.2 s ×2 ±20 % | no |
+| Kafka producer | 10 s | **30 s delivery** | **bounded by the delivery timeout, not by a count** | 100 ms → 3.2 s ×2 ±20 % | no |
 | Kafka consumer | 10 s | — | infinite | 1 s → 30 s ×2 ±20 % | no |
 | PostgreSQL | 5 s | 3 s | 3 | 200 ms → 800 ms ×2 ±20 % | open after 5 consecutive, 30 s |
 | MLflow registry | 5 s | 10 s | 3 | 1 s → 4 s ×2 ±20 % | open after 3 consecutive, 60 s |
 | gRPC Supervisor→Control | 2 s | **500 ms** | **2** | 100 ms, 200 ms ±20 % | open after 10 consecutive, 15 s |
 | Operations API → PostgreSQL | 5 s | 3 s | 2 | 200 ms ×2 | open after 5, 30 s |
+
+**The Kafka producer's budget is time, not attempts** *(corrected 2026-09-28, ADR-0021)*. This row
+said "max attempts 5", which cannot coexist with the idempotent producer §6 requires: with
+`enable.idempotence=true` the client retries until the **delivery timeout** expires, and capping the
+attempt count instead either does nothing or breaks the ordering guarantee idempotence exists to
+provide. The bound that matters is therefore **30 s**, after which the record fails to the caller
+and the gateway's buffer absorbs it (F05, F06). An attempt count was never the real contract here —
+it was a number copied into a row that wanted a time.
 
 **The gRPC command path is deliberately the tightest and the least retried.** Two attempts at 500 ms
 means a command either lands within ~1.4 s or is abandoned and re-derived from a fresh decision.

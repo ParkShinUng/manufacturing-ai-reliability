@@ -75,7 +75,7 @@ surfaced, is resolved.
 > What Phase 2 does **not** include: the Kafka binding of the egress port (Phase 3), the metrics
 > exporter (Phase 8), and the `factory.equipment-states.v1` record.
 
-## Phase 3 — Kafka Event Backbone — **NOT READY, not requested**
+## Phase 3 — Kafka Event Backbone — **READY, not requested**
 
 > **Definition-of-Ready check, 2026-09-23 — NOT READY.** Codex challenged it read-only
 > (`reviews/phase-3/`) and found ten items, three of them P0.
@@ -91,8 +91,15 @@ surfaced, is resolved.
 > named Phase 3 responsibility (`KAFKA_EVENT_BACKBONE.md` §2.1), and `DEC-007` records the amended
 > identity.
 >
-> **Still blocking:** an **accepted ADR** selecting the Kafka client library and local broker
-> runtime. Major dependency, so a Codex challenge is mandatory before it can be accepted.
+> **Ready 2026-09-28.** The last blocker, an ADR selecting the Kafka client library and broker
+> runtime, is `ADR-0021` — challenged by Codex, `ACCEPT_WITH_CONDITIONS`, conditions applied, and
+> accepted by the product owner. Its **group B** conditions are Phase 3 entry conditions: the
+> restored licence graph, the native binaries' licences, partition-count immutability, a smoke test
+> per client semantic, the pinned consumer group protocol, the pinned Testcontainers image, and
+> Docker-dependent tests that fail rather than skip.
+>
+> **Ready is not started.** No package reference, lock file, compose file or test project may be
+> added until the product owner asks for Phase 3.
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset
 commit · DLQ and redrive · lag and record-age metrics · replay on projector groups only ·
 **binding the gateway's egress port to `factory.telemetry.v1` and `factory.equipment-states.v1`**

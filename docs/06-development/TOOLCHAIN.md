@@ -23,6 +23,25 @@ The baseline favors supported/LTS or mature stable releases over preview release
 The gateway's Modbus **client** has no package since 2026-09-21: NModbus's client reads block a
 thread-pool thread each (OD-006), and ADR-0020 was amended to an in-repository async FC04 reader.
 
+### Phase 3 — pinned by ADR-0021, not yet referenced
+
+Accepted 2026-09-28. **Nothing below is in a project file yet**: Phase 3 has not been requested, and
+adding a package reference or a lock file before it is would be starting the phase
+(`CLAUDE.md`). The versions are fixed here so that when Phase 3 starts, no one chooses them again.
+
+| Component | Package / image | Version | Licence |
+|---|---|---|---|
+| Kafka producers and consumers | `Confluent.Kafka` | **2.15.1** | Apache-2.0 (package metadata) |
+| — its only dependency | `librdkafka.redist` | **2.15.1** | BSD-2-Clause plus 14 permissive components, read from the packaged `LICENSES.txt` |
+| integration tests | `Testcontainers`, `Testcontainers.Kafka` | **4.15.0** | MIT |
+| local and CI broker | `apache/kafka` | **4.3.1**, digest `sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837` | Apache-2.0 |
+
+Two licence items are **open** and are Phase 3 spike conditions, not claims this table makes:
+`librdkafka.redist` declares its licence with the deprecated `licenseUrl` form, so
+`scripts/license-scan.mjs` will report it unidentified; and the package ships native binaries that
+its own `LICENSES.txt` does not cover — OpenSSL 3, libcurl, zlib, zstd, and the MSVC runtime, the
+last redistributable under Microsoft's terms rather than an open licence. See ADR-0021 group B.
+
 `OPCFoundation.NetStandard.Opc.Ua.Core` arrives transitively and is not referenced directly. The
 `OPCFoundation.NetStandard.Opc.Ua` **meta package is deliberately not used** — it has no framework
 assets of its own and pulls in GDS and complex-type assemblies neither service needs.

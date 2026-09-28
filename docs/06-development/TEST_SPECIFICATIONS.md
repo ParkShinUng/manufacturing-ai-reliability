@@ -281,6 +281,11 @@ exits non-zero with the topic named, because a changed partition count silently 
 topic and destroys per-key ordering (§4) · no topic is auto-created by a producer or consumer at any
 point in the run.
 
+**Immutability is ours to enforce, not Kafka's.** `AdminClient.CreatePartitionsAsync` exists and the
+broker will increase a partition count on request (ADR-0021). The bootstrap therefore describes the
+topic and fails **before** any mutating call, and the test asserts both halves: the run exits
+non-zero **and** the live topic still has its original partition count afterwards.
+
 ### KAFKA-002 — a schema-invalid record is DLQ'd on the first attempt → AC-027
 **Setup:** a real broker and topic, a consumer built on the **shared consume-validate-DLQ
 component** (OD-009) with a downstream handler that records every invocation.
