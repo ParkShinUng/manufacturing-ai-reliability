@@ -75,7 +75,7 @@ surfaced, is resolved.
 > What Phase 2 does **not** include: the Kafka binding of the egress port (Phase 3), the metrics
 > exporter (Phase 8), and the `factory.equipment-states.v1` record.
 
-## Phase 3 — Kafka Event Backbone — **READY, not requested**
+## Phase 3 — Kafka Event Backbone — **IN PROGRESS** (requested 2026-09-28)
 
 > **Definition-of-Ready check, 2026-09-23 — NOT READY.** Codex challenged it read-only
 > (`reviews/phase-3/`) and found ten items, three of them P0.
@@ -98,8 +98,20 @@ surfaced, is resolved.
 > per client semantic, the pinned consumer group protocol, the pinned Testcontainers image, and
 > Docker-dependent tests that fail rather than skip.
 >
-> **Ready is not started.** No package reference, lock file, compose file or test project may be
-> added until the product owner asks for Phase 3.
+> **Requested by the product owner on 2026-09-28**, which is what lifts the no-dependencies rule
+> above. Order of work, in the repository's own sequence:
+>
+> 1. **Entry conditions first** — group B is checked before code depends on being right about it:
+>    the projects are created with the pinned packages, restored with lock files, and
+>    `scripts/license-scan.mjs` is run over the whole graph (B1, B2, B3).
+> 2. **Topic bootstrap** — `AC-026`, `KAFKA-001`, including partition-count immutability (B4).
+> 3. **The shared consume-validate-DLQ component** — `AC-027`, `KAFKA-002`, bounded as `OD-009`
+>    requires, with the client semantics smoke tests (B5) and the pinned group protocol (B6).
+> 4. **Binding the gateway's egress port** — telemetry and the equipment-state stream `OD-008`
+>    specified: 2 s refresh, `gatewayEpoch`, tombstones.
+> 5. **Replay mechanics** — `AC-045`, `FAIL-KAFKA-001`.
+>
+> Docker-dependent suites run in CI and fail rather than skip (B8).
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset
 commit · DLQ and redrive · lag and record-age metrics · replay on projector groups only ·
 **binding the gateway's egress port to `factory.telemetry.v1` and `factory.equipment-states.v1`**

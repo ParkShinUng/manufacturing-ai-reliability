@@ -210,18 +210,19 @@ false, Phase 3 stops and this ADR is amended rather than worked around.
 
 ### Group B — Phase 3 spike conditions
 
-**B1 — the licence graph, restored.** `scripts/license-scan.mjs` over the whole graph once the
-packages are actually referenced. `TOOLCHAIN.md` claims 29 packages, all permissive; this changes
-that number and must change the claim with it.
+**B1 — the licence graph, restored. DONE 2026-09-28.** 48 packages, all permissive.
+`TOOLCHAIN.md` is updated, including a correction: `MS-PL` was already in the Phase 2 graph and the
+table had not said so.
 
-**B2 — the scanner must not pass this silently.** `librdkafka.redist` declares its licence with the
-deprecated `licenseUrl` form, so the scan will report it unidentified, exactly as
-`xunit.abstractions` does today. Either the scanner learns to read a packaged `LICENSES.txt`, or the
-entry is annotated with the evidence above. An unidentified entry must never be a silent pass.
+**B2 — the scanner must not pass this silently. DONE 2026-09-28.** `scripts/license-scan.mjs` is a
+gate: an unclassifiable licence fails unless `scripts/license-evidence.json` records what was read
+and where, and stale evidence fails too. Both failure paths were tested by removing the evidence and
+by adding an entry for a package that is not in the graph.
 
-**B3 — the shipped binaries, not just the source manifest.** Record the licences of the native
-payload named in evidence item 3, including Microsoft's redistribution terms for the MSVC runtime,
-for the runtimes this project actually deploys.
+**B3 — the shipped binaries, not just the source manifest. DONE 2026-09-28.** Recorded in
+`TOOLCHAIN.md`. The deployed runtime is Linux, where the package ships a single `librdkafka.so` with
+those components statically linked; the OpenSSL, libcurl, zlib, zstd and MSVC runtime binaries are
+in the **Windows** runtimes only, so no Microsoft redistributable reaches a container image.
 
 **B4 — partition-count immutability is ours to enforce, not Kafka's.** `AdminClient` offers
 `CreatePartitionsAsync` and the broker will honour it. The bootstrap must describe first and fail

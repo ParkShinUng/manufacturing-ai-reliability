@@ -75,7 +75,8 @@ All conditions are satisfied (see below). Phase 1 is authorized; implementation 
 | Conditions | **All satisfied** |
 | **Phase 1** | **Complete** |
 | **Phase 2** | **Complete** — requested 2026-09-16, completed 2026-09-22 |
-| **Implementation** | Phases 1 and 2 complete. **Phase 3 not requested.** |
+| **Phase 3** | **Requested 2026-09-28, in progress** |
+| **Implementation** | Phases 1 and 2 complete; Phase 3 started 2026-09-28 at the product owner's request. **Phase 4 and later not requested.** |
 
 ### Authorized is not the same as started
 
@@ -92,8 +93,9 @@ check, because both require the Edge Gateway and neither can be evaluated by the
 
 **Phase 2 was requested by the product owner on 2026-09-16** and completed on 2026-09-22. Its prerequisite,
 an ADR selecting the OT protocol libraries challenged by Codex, was met the same day (`ADR-0020`).
-Phase 3 and everything after it remain unrequested, and this paragraph applies to each of them
-individually.
+**Phase 3 was requested by the product owner on 2026-09-28**, after its Definition-of-Ready check
+closed `OD-007`, `OD-008` and `OD-009` and `ADR-0021` was accepted. Phase 4 and everything after it
+remain unrequested, and this paragraph applies to each of them individually.
 
 ### What remains true regardless of this approval
 

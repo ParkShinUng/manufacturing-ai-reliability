@@ -27,6 +27,8 @@ manufacturing-ai-reliability/
 │  │  ├─ EquipmentSimulator/          # L3 domain core - MUST stay dependency-free (see below)
 │  │  ├─ EquipmentSimulator.Protocols/ # OPC UA + Modbus servers; where the OT libraries live
 │  │  ├─ EquipmentSimulator.Tests/    # unit tests live alongside source (TEST_SPECIFICATIONS.md 1)
+│  │  ├─ EventBackbone/               # Phase 3: topic bootstrap + the one shared consumer path
+│  │  ├─ EventBackbone.Tests/
 │  │  ├─ EdgeGateway/
 │  │  ├─ SafetySupervisor/
 │  │  ├─ ControlService/

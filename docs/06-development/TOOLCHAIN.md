@@ -55,14 +55,21 @@ Both steps this section previously listed as outstanding are **done**.
 restore on another machine can resolve a different transitive graph — the same class of problem as a
 floating container tag.
 
-**Licence scan of the full graph: 29 packages, all permissive.** Run with
-`node scripts/license-scan.mjs`, which reads the `.nuspec` and, where the package ships a licence
-file, the file itself from the NuGet cache.
+**Licence scan of the full graph: 48 packages, all permissive** *(re-run 2026-09-28 after Phase 3's
+packages were added; it was 29 in Phase 2)*. Run with `node scripts/license-scan.mjs`, which reads
+the `.nuspec` and, where the package ships a licence file, the file itself from the NuGet cache.
 
 | Licence | Packages |
 |---|---|
-| MIT | the six OPC Foundation packages, `NModbus`, `BitFaster.Caching`, and the Microsoft.Extensions set |
-| Apache-2.0 | the xunit set |
+| MIT | the six OPC Foundation packages, `NModbus`, `BitFaster.Caching`, the Microsoft.Extensions set, `Testcontainers` and its `Docker.DotNet.Enhanced`, `SSH.NET` and `SharpZipLib` dependencies |
+| Apache-2.0 | the xunit set, `Confluent.Kafka` |
+| MS-PL | `Xunit.SkippableFact`, `Validation` |
+| BSD-2-Clause, by recorded evidence | `librdkafka.redist` |
+
+**`MS-PL` was in the graph in Phase 2 and this table did not say so.** The Phase 2 entry listed only
+MIT and Apache-2.0, because it was written from the direct dependencies rather than re-derived from
+the scan output. MS-PL is permissive and OSI-approved, so the conclusion held; the table was simply
+not a reading of the evidence. Corrected 2026-09-28.
 
 Two findings worth keeping:
 
@@ -71,6 +78,21 @@ Two findings worth keeping:
   the one ADR-0020 checked on GitHub.
 - `xunit.abstractions 2.0.3` still uses the deprecated `licenseUrl` form, so the scanner cannot
   classify it offline. Fetched and confirmed **Apache-2.0**; it is a test-only dependency.
+- `librdkafka.redist 2.15.1` is the same shape. Its packaged `LICENSES.txt` was read from inside the
+  `.nupkg`: fifteen sections, all permissive.
+
+**The scan is now a gate** (ADR-0021 B2). It used to print "someone has to look at it" and exit 0,
+which is a report nobody is obliged to act on. A licence it cannot classify now **fails** unless
+`scripts/license-evidence.json` records what was read and where, and an evidence entry that no
+longer matches an unclassifiable package fails too — a stale excuse outliving the thing it excused
+is how an exception becomes permanent.
+
+**What `librdkafka.redist` ships beyond that licence file** (ADR-0021 B3). The Windows runtimes
+carry binaries `LICENSES.txt` says nothing about: OpenSSL 3, libcurl, zlib, zstd, and Microsoft's
+`msvcp140` / `vcruntime140`. The first four are permissive; the MSVC runtime is redistributable
+under Microsoft's own terms. **What this project deploys is Linux**, and the Linux runtimes contain
+exactly one file each — `librdkafka.so`, with those components statically linked — so no Microsoft
+redistributable enters a container image. The Windows payload matters only on a developer machine.
 
 No copyleft and no membership-gated licence anywhere in the graph. ADR-0020's licence claim,
 deliberately narrowed to the direct packages at the time, now holds for all of them.

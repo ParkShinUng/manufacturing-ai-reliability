@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const SOLUTION = "src/dotnet/Mair.sln";
+const EVIDENCE = "scripts/license-evidence.json";
 
 // Permissive licences that impose no obligation beyond attribution. Anything not on this list is
 // reported for a human to look at rather than silently accepted - an unknown licence is not a
@@ -140,18 +141,43 @@ if (process.argv.includes("--json")) {
 
 console.log(`\n${rows.length} packages scanned, ${review.length} needing review.`);
 
-if (review.length === 0) {
-  console.log("Every package carries a permissive SPDX licence.");
-  process.exit(0);
-}
+// This script used to exit 0 here, on the grounds that gating needed an agreed policy on FILE and
+// URL licences first, and that inventing one in a script would be an undocumented decision.
+// ADR-0021 B2 is that policy: a licence the scanner cannot classify may pass **only** with evidence
+// recorded in `license-evidence.json`, naming where the evidence came from. Everything else fails —
+// "someone has to look at it", printed to a log, is not someone looking.
+const evidence = existsSync(EVIDENCE) ? JSON.parse(readFileSync(EVIDENCE, "utf8")).packages : [];
+const key = (id, version) => `${id}@${version}`;
+const excused = new Map(evidence.map((e) => [key(e.id, e.version), e]));
 
-console.log("\nNeeding review — a licence this script cannot classify is not a failure by itself,");
-console.log("but it is not a pass either, and someone has to look at it:");
 for (const r of review) {
-  console.log(`  ${r.id} ${r.version}\n    ${r.licence}: ${r.detail}`);
+  const e = excused.get(key(r.id, r.version));
+  if (!e) continue;
+  console.log(`\n  ${r.id} ${r.version} — ${r.licence} in metadata, ${e.licence} by evidence (${e.verifiedOn})`);
+  console.log(`    ${e.evidence}`);
+  if (e.caveat) console.log(`    CAVEAT: ${e.caveat}`);
 }
 
-// Deliberately exit 0: this is an inventory for a human, not a gate. Making it a gate would need an
-// agreed policy on FILE and URL licences first, and inventing that policy here would be exactly the
-// kind of undocumented decision AGENTS.md forbids.
+const unexcused = review.filter((r) => !excused.has(key(r.id, r.version)));
+if (unexcused.length > 0) {
+  console.error("\nFAIL — a licence this script cannot classify, with no recorded evidence:");
+  for (const r of unexcused) {
+    console.error(`  ${r.id} ${r.version}\n    ${r.licence}: ${r.detail}`);
+  }
+  console.error("\nRead the licence inside the package and record it in scripts/license-evidence.json,");
+  console.error("or drop the dependency. An unidentified licence is not a pass.");
+  process.exit(1);
+}
+
+// A stale excuse outlives the thing it excused, which is how an exception becomes permanent.
+const stale = evidence.filter((e) => !review.some((r) => key(r.id, r.version) === key(e.id, e.version)));
+if (stale.length > 0) {
+  console.error("\nFAIL — evidence recorded for packages that no longer need it:");
+  for (const e of stale) console.error(`  ${e.id} ${e.version}`);
+  process.exit(1);
+}
+
+console.log(review.length === 0
+  ? "\nEvery package carries a permissive SPDX licence."
+  : `\nEvery package is permissive: ${rows.length - review.length} by metadata, ${review.length} by recorded evidence.`);
 process.exit(0);

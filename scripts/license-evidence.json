@@ -1,0 +1,26 @@
+{
+  "$comment": [
+    "Packages whose licence this scanner cannot classify from metadata, and the evidence that",
+    "settles them. ADR-0021 group B2: an unidentified licence may pass only with evidence recorded",
+    "here, and an entry that no longer matches an unidentified package fails the scan, so this file",
+    "cannot quietly outlive what it excuses.",
+    "Each entry names where the evidence came from, not merely what the answer was."
+  ],
+  "packages": [
+    {
+      "id": "librdkafka.redist",
+      "version": "2.15.1",
+      "licence": "BSD-2-Clause",
+      "verifiedOn": "2026-09-28",
+      "evidence": "LICENSES.txt read from inside the .nupkg: 15 sections, all permissive - librdkafka itself, lz4 and wingetopt BSD-2-Clause; queue and snappy BSD-3-Clause; cjson, hdrhistogram, murmur2 and pycrc MIT; opentelemetry Apache-2.0; crc32c, fnv1a, nanopb, regexp and tinycthread zlib-style or public domain. The .nuspec uses the deprecated licenseUrl form, which is why metadata alone cannot classify it.",
+      "caveat": "LICENSES.txt does not cover the native binaries the package ships. runtimes/win-*/native contains OpenSSL 3 (libcrypto-3, libssl-3), libcurl, zlib (z.dll), zstd, and Microsoft's msvcp140 and vcruntime140. The first four are permissive; the MSVC runtime is redistributable under Microsoft's terms rather than an open licence. ADR-0021 B3 owns recording those for the runtimes this project deploys."
+    },
+    {
+      "id": "xunit.abstractions",
+      "version": "2.0.3",
+      "licence": "Apache-2.0",
+      "verifiedOn": "2026-09-18",
+      "evidence": "The package predates SPDX metadata and carries only licenseUrl. The referenced license.txt was fetched and read: Apache-2.0. Test-only dependency, pulled in transitively by xunit 2.9.3."
+    }
+  ]
+}
