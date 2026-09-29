@@ -300,6 +300,65 @@ public sealed class PollLoopTests
         }
     }
 
+    // ------------------------------------------------------------ observed state (EDGE_GATEWAY.md 5.2)
+
+    private sealed class ThrowingStateSink : IEquipmentStateSink
+    {
+        public void Emit(EquipmentStateRecord record) => throw new InvalidOperationException("state topic down");
+
+        public void Tombstone(string equipmentId) => throw new InvalidOperationException("state topic down");
+    }
+
+    private static (EquipmentPollLoop Loop, FakeSource Source, FakeTimeProvider Time) BuildWithStates(IEquipmentStateSink states)
+    {
+        var source = new FakeSource();
+        var time = new FakeTimeProvider();
+        var stream = new EquipmentStateStream("eq-001", "edge-gateway@test", 1_790_000_000_000, states);
+        var loop = new EquipmentPollLoop(
+            source, new BoundedEgressBuffer(), new RecordingEgressSink(), new ReconnectBackoff(() => 0.5), time, stream);
+
+        return (loop, source, time);
+    }
+
+    [Fact]
+    public async Task TheLoopReportsConnectTelemetryAndSessionLossAsObservedState()
+    {
+        var sink = new RecordingEquipmentStateSink();
+        var (loop, source, time) = BuildWithStates(sink);
+        using var stopping = new CancellationTokenSource();
+
+        var run = loop.RunAsync(stopping.Token);
+        await AdvanceUntilAsync(time, () => sink.Records.Any(r => r.State == EquipmentState.Running), "RUNNING observed");
+
+        source.ReadFails = true;
+        await AdvanceUntilAsync(time, () => sink.Records[^1].State == EquipmentState.Offline, "OFFLINE observed");
+
+        await stopping.CancelAsync();
+        await run;
+
+        var transitions = sink.Records.Where(r => !r.IsRefresh).Select(r => r.TransitionId).ToList();
+        Assert.Equal(["T1", "T3", "T11"], transitions.Take(3));
+    }
+
+    [Fact]
+    public async Task AFailingStateSinkNeverTouchesProtocolHealth()
+    {
+        // The state topic is egress like any other: its failure is counted, and must not mark the
+        // equipment OFFLINE or back off its sampling (section 4).
+        var (loop, _, time) = BuildWithStates(new ThrowingStateSink());
+        using var stopping = new CancellationTokenSource();
+
+        var run = loop.RunAsync(stopping.Token);
+        await AdvanceUntilAsync(time, () => loop.PollsCompleted >= 20, "polling through a dead state sink");
+        await stopping.CancelAsync();
+        await run;
+
+        Assert.True(loop.ProtocolConnected);
+        Assert.Equal(1, loop.ReconnectTotal);
+        Assert.Equal(0, loop.ReadFailures);
+        Assert.True(loop.EgressFailures > 0);
+    }
+
     [Fact]
     public async Task CancellationIsTheOnlyWayTheLoopExits()
     {

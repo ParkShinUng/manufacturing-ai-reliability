@@ -40,13 +40,19 @@ public sealed class EquipmentPollLoop
     private readonly IEgressSink _sink;
     private readonly ReconnectBackoff _backoff;
     private readonly TimeProvider _time;
+    private readonly EquipmentStateStream? _states;
 
+    /// <param name="states">
+    /// The observed-state stream for this equipment (<c>EDGE_GATEWAY.md</c> §5.2). Optional so the
+    /// Phase 2 loop tests that care only about telemetry do not have to build one.
+    /// </param>
     public EquipmentPollLoop(
         ITelemetrySource source,
         BoundedEgressBuffer buffer,
         IEgressSink sink,
         ReconnectBackoff? backoff = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        EquipmentStateStream? states = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(buffer);
@@ -57,6 +63,7 @@ public sealed class EquipmentPollLoop
         _sink = sink;
         _backoff = backoff ?? new ReconnectBackoff();
         _time = timeProvider ?? TimeProvider.System;
+        _states = states;
     }
 
     private DateTimeOffset _nextDeadline;
@@ -102,14 +109,22 @@ public sealed class EquipmentPollLoop
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            // Every pass, connected or not: the refresh and the connect timeout both run off it.
+            // During an outage a pass is one backoff interval (up to 8 s), so the OFFLINE refresh is
+            // sparser than 2 s - which only confirms a fallback gate 10 would take anyway, since
+            // OFFLINE is never AI-eligible.
+            Observe(s => s.Tick(_time.GetUtcNow()));
+
             if (!ProtocolConnected && !await TryConnectAsync(cancellationToken))
             {
                 continue;
             }
 
+            IReadOnlyList<CanonicalTelemetry> read;
             try
             {
-                foreach (var telemetry in await _source.ReadAsync(cancellationToken))
+                read = await _source.ReadAsync(cancellationToken);
+                foreach (var telemetry in read)
                 {
                     _buffer.Enqueue(telemetry);
                 }
@@ -136,11 +151,22 @@ public sealed class EquipmentPollLoop
                 ProtocolConnected = false;
                 ReadFailures++;
                 LastFailure = $"{ex.GetType().Name}: {ex.Message}";
+                Observe(s => s.SessionLost(_time.GetUtcNow()));
                 await Delay(_backoff.Next(), cancellationToken);
                 continue;
             }
 
-            // Outside the protocol try: nothing the sink does can reach ProtocolConnected.
+            // Outside the protocol try, like the telemetry sink: a state record the sink refuses is
+            // an egress fault, and must not mark the equipment OFFLINE.
+            Observe(s =>
+            {
+                var now = _time.GetUtcNow();
+                foreach (var telemetry in read)
+                {
+                    s.Observed(telemetry.EquipmentState, now);
+                }
+            });
+
             Drain();
             await WaitForNextTickAsync(cancellationToken);
         }
@@ -153,6 +179,7 @@ public sealed class EquipmentPollLoop
             await _source.ConnectAsync(cancellationToken);
             ProtocolConnected = true;
             ReconnectTotal++;
+            Observe(s => s.Connected(_time.GetUtcNow()));
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -165,6 +192,25 @@ public sealed class EquipmentPollLoop
             LastFailure = $"{ex.GetType().Name}: {ex.Message}";
             await Delay(_backoff.Next(), cancellationToken);
             return false;
+        }
+    }
+
+    /// <summary>Applies an observed-state update, counting a sink failure as an egress failure.</summary>
+    private void Observe(Action<EquipmentStateStream> update)
+    {
+        if (_states is null)
+        {
+            return;
+        }
+
+        try
+        {
+            update(_states);
+        }
+        catch (Exception ex)
+        {
+            EgressFailures++;
+            LastEgressFailure = $"{ex.GetType().Name}: {ex.Message}";
         }
     }
 

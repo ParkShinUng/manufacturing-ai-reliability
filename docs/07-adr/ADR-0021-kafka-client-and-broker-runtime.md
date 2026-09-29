@@ -262,8 +262,10 @@ assignment (§6.1 — before assignment it silently does nothing), a null-valued
 and headers surviving a round trip. **PARTIAL 2026-09-29** — proven by `ContractConsumerTests`:
 the idempotent `acks=all` producer, manual commit (the committed offset is asserted, including
 that it does **not** advance when the DLQ produce fails), and headers surviving onto the DLQ
-record. **Still open:** seek and rewind (`AC-045`), `seekToEnd` after assignment, and tombstones —
-each lands with the work that needs it.
+record. **Tombstones done 2026-09-29** — `EquipmentStateStreamTests` produces one through
+`KafkaEquipmentStateSink` and reads it back from the compacted topic as a null value under the
+equipment's key. **Still open:** seek and rewind (`AC-045`) and `seekToEnd` after assignment, both
+in step 5.
 
 **B6 — the consumer group protocol is pinned. DONE 2026-09-29.** `ContractConsumer` overrides
 whatever it is given with `group.protocol=classic` and `partition.assignment.strategy=range`, plus
