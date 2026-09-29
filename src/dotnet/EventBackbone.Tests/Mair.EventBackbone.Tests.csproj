@@ -24,6 +24,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EventBackbone\Mair.EventBackbone.csproj" />
+    <!-- The end-to-end check: what the gateway produces, consumed through the production path. -->
+    <ProjectReference Include="..\EdgeGateway\Mair.EdgeGateway.csproj" />
+    <ProjectReference Include="..\EquipmentSimulator\Mair.EquipmentSimulator.csproj" />
   </ItemGroup>
 
 </Project>

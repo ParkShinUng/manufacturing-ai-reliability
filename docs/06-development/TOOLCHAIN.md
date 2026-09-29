@@ -24,6 +24,12 @@ The baseline favors supported/LTS or mature stable releases over preview release
 | both, configuration and certificates | `OPCFoundation.NetStandard.Opc.Ua.Configuration` | **1.5.378.176** | MIT |
 | simulator, Modbus TCP server | `NModbus` | **3.0.83** | MIT |
 
+**`Corvus.Text.Json` ships an analyzer.** It arrives with the validator and flags `System.Text.Json`
+calls that have a UTF-8 overload (rule `CTJ001`). Under `TreatWarningsAsErrors` that is a build
+error in any project that references it, so a dependency is enforcing style on this repository's
+code. Accepted — the rule's advice is sound and cheap — but noted, because a dependency that can
+fail the build for reasons unrelated to what it was added for is worth knowing about.
+
 The gateway's Modbus **client** has no package since 2026-09-21: NModbus's client reads block a
 thread-pool thread each (OD-006), and ADR-0020 was amended to an in-repository async FC04 reader.
 
@@ -60,8 +66,16 @@ Both steps this section previously listed as outstanding are **done**.
 restore on another machine can resolve a different transitive graph — the same class of problem as a
 floating container tag.
 
-**Licence scan of the full graph: 50 packages, all permissive** *(re-run 2026-09-29 after ADR-0022's
-validator was added; 48 on 2026-09-28, 29 in Phase 2)*. Run with `node scripts/license-scan.mjs`, which reads
+**Licence scan of the full graph: 47 distinct packages, all permissive** *(2026-09-29; 29 in
+Phase 2)*.
+
+*Corrected 2026-09-29.* This line said **50** a few hours earlier. That was the number of
+**package@version entries**, not of packages: the Kafka test project had three packages —
+`Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Logging.Abstractions`
+and `Newtonsoft.Json` — at older versions, pulled in by Testcontainers, while the rest of the
+solution used newer ones, so each was counted twice. Adding a project reference unified them and the
+count fell to 47 with nothing removed. The scanner still keys on package@version, which is right
+for licences — two versions can differ — but the headline number is now the distinct count. Run with `node scripts/license-scan.mjs`, which reads
 the `.nuspec` and, where the package ships a licence file, the file itself from the NuGet cache.
 
 | Licence | Packages |

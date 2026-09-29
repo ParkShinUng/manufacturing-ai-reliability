@@ -7,6 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- ADR-0021: the gateway is the producer of factory.telemetry.v1 and factory.equipment-states.v1. -->
+    <PackageReference Include="Confluent.Kafka" Version="2.15.1" />
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.176" />
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.176" />
   </ItemGroup>

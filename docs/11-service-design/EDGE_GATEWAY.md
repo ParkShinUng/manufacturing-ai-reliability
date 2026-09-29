@@ -56,6 +56,19 @@ contract's *data shape* with its *transport realisation*, and would have dragged
 retention and producer settings into Phase 2 where an implementer would have chosen them instead of
 `KAFKA_TOPOLOGY_AND_SEMANTICS.md`.
 
+### 5.1a Telemetry on Kafka — bound 2026-09-29
+
+`KafkaTelemetrySink` is the egress port's Kafka binding for `factory.telemetry.v1`, keyed by
+`equipmentId`. It never blocks the poll loop (§4): `Produce` only enqueues locally, and if the
+client's queue is full the call throws, the loop counts an egress failure, and the record stays in
+the bounded buffer. A record the client accepted and then failed to deliver within §11's 30 s is
+counted in `DeliveryFailures` — by then it has left the buffer, and the count is what keeps that
+loss visible.
+
+Records are written by `TelemetryJson`, field by field against `telemetry.schema.json`, and the tests
+validate every record from a run over eight fault profiles against the schema itself, then read
+records back through the production consume path byte for byte.
+
 ### 5.2 Equipment-state records (OD-008)
 
 The gateway publishes its **observed** state for each equipment:

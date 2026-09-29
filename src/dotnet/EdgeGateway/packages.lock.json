@@ -2,6 +2,15 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "Confluent.Kafka": {
+        "type": "Direct",
+        "requested": "[2.15.1, )",
+        "resolved": "2.15.1",
+        "contentHash": "II/gcWsptqKp3UJ4f7zFug7S4xfND1IdYsrNlIJSRRG8WHmP/NfSXiiLWhKGzTUlZwfkL1mcdU71eo1eKf04pA==",
+        "dependencies": {
+          "librdkafka.redist": "2.15.1"
+        }
+      },
       "OPCFoundation.NetStandard.Opc.Ua.Client": {
         "type": "Direct",
         "requested": "[1.5.378.176, )",
@@ -26,6 +35,11 @@
         "type": "Transitive",
         "resolved": "2.6.0",
         "contentHash": "iF2dMiGpaya8Umwi0OfsGKtq3aMVgHVsBChwQL+NhShEsRorcoTinGf9FFNBnBMwJW2Vm0FqhtOaEBY0+74p6g=="
+      },
+      "librdkafka.redist": {
+        "type": "Transitive",
+        "resolved": "2.15.1",
+        "contentHash": "fhRs/2fY80isR9zqrCkDdEhrp5Vi4Lxetg6yjhBl2uNiQs9Z2StA/Q8WqkJmj5OqmG8BQaP6OXvzbGngqXid+w=="
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "Transitive",
