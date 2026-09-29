@@ -10,10 +10,6 @@
   "gatewayEpoch": 1789200000000,
   "observedBy": "edge-gateway@gw-1",
   "aiEligible": false,
-  "activeConditions": [
-    "VIBRATION_HIGH",
-    "QUALITY_UNCERTAIN"
-  ],
   "occurredAtUtc": "2026-09-15T04:03:11.480Z",
   "ingestTimeUtc": "2026-09-15T04:03:11.492Z",
   "producer": "edge-gateway@gw-1",

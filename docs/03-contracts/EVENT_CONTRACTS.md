@@ -269,5 +269,6 @@ recorded here so the exception can never be claimed retroactively:
 | Date | Schema | Change | Why it was not a `v2` |
 |---|---|---|---|
 | 2026-09-28 | `equipment-state.schema.json` | `gatewayEpoch` added as **required** (OD-008) | `factory.equipment-states.v1` is produced in Phase 3, which has not started. Nothing has emitted or consumed one |
+| 2026-09-29 | `equipment-state.schema.json` | `aiEligible` made **required**; `transitionId` widened to T1–T16 (OD-010) | Phase 3 has started, but the equipment-state producer has not been written: still no record has been emitted or consumed |
 
 Once a schema's first producer ships, this table closes for it and the rules above are the only path.

@@ -17,6 +17,7 @@
     "ingestTimeUtc",
     "producer",
     "observedBy",
+    "aiEligible",
     "correlationId"
   ],
   "properties": {
@@ -66,8 +67,8 @@
         "string",
         "null"
       ],
-      "pattern": "^T(1[0-2]|[1-9])$",
-      "description": "T1..T12 from EQUIPMENT_MODEL_AND_STATE.md 3.2."
+      "pattern": "^T(1[0-6]|[1-9])$",
+      "description": "T1..T16 from EQUIPMENT_MODEL_AND_STATE.md 3.2. Absent on a refresh record, which reports no transition (OD-008). null only for an observed change that is not representable as one transition - an intermediate state the observer never saw (OD-010)."
     },
     "stateSequence": {
       "type": "integer",
@@ -86,7 +87,7 @@
     },
     "aiEligible": {
       "type": "boolean",
-      "description": "Derived: true only when state == RUNNING. Carried explicitly so the Supervisor gate is a field read rather than a re-derivation."
+      "description": "Derived: true only when state == RUNNING. Required so the Supervisor's gate is a field read rather than a re-derivation (OD-010)."
     },
     "activeConditions": {
       "type": "array",
@@ -104,7 +105,8 @@
           "SAFETY_SENSOR_BAD",
           "STOP_REQUESTED"
         ]
-      }
+      },
+      "description": "Not emitted by the edge gateway: neither protocol carries the equipment's conditions (OT_PROTOCOL_MAPPING.md, register +22 and the OPC UA address space). Absent until the protocol mapping carries condition identity for both protocols; a producer must not infer it (OD-010)."
     },
     "occurredAtUtc": {
       "type": "string",

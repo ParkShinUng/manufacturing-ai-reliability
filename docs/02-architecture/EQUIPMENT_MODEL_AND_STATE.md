@@ -207,6 +207,18 @@ carries an `observedBy` field so a consumer can never mistake it for ground trut
 | T10 | `FAULT` | `IDLE` | operator reset **and** all protective conditions clear | **operator** | — | requires explicit acknowledgement |
 | T11 | any | `OFFLINE` | protocol session lost | auto | `session_timeout` 3 s | telemetry becomes stale; Supervisor rejects on freshness |
 | T12 | `DEGRADED` | `STOPPING` | setpoint 0 commanded | auto | — | none |
+| T13 | `CONNECTING` | `DEGRADED` | first valid telemetry reports `DEGRADED` | auto | as T2 | AI not eligible |
+| T14 | `CONNECTING` | `FAULT` | first valid telemetry reports `FAULT` | auto | as T2 | AI not eligible; the equipment already holds rate 0 |
+| T15 | `CONNECTING` | `STOPPING` | first valid telemetry reports `STOPPING` | auto | as T2 | AI not eligible |
+| T16 | `CONNECTING` | `OFFLINE` | `connect_timeout` 10 s with no valid telemetry | auto | — | telemetry absent; Supervisor rejects on freshness |
+
+**T13–T16 are added by `OD-010` (2026-09-29).** They are transitions of the gateway's **observed**
+state, not moves the equipment makes: `CONNECTING` is the gateway's, and a machine can already be
+`DEGRADED`, `FAULT` or `STOPPING` when a gateway first reaches it. The table previously named only
+`CONNECTING → IDLE` and `→ RUNNING`, and left the `connect_timeout` return to `OFFLINE` in T2's
+timeout column with no ID of its own. An observer had to report those facts with a `null`
+transition — papering over a model that had forgotten them. None of T13–T16 leads to `RUNNING`, so
+none can make a machine AI-eligible, and the forbidden transitions below are untouched.
 
 **Forbidden transitions**, stated explicitly because their absence is what makes the machine safe:
 - `FAULT → RUNNING` directly. `FAULT` always exits through `IDLE` with operator acknowledgement (T10).

@@ -81,6 +81,9 @@ The gateway publishes its **observed** state for each equipment:
 | `stateSequence` | increments per record, per equipment; restarts with the process |
 | `gatewayEpoch` | milliseconds since the Unix epoch at process start; identity is `(equipmentId, gatewayEpoch, stateSequence)` |
 | Decommissioning | a **tombstone** under the equipment's key when it leaves the configured inventory — the topic is `compact` with no deletion, so nothing else removes it |
+| `transitionId` | the §3.2 ID for the observed `previousState → state` pair, T1–T16; **`null`** only when the pair is not one documented transition, i.e. the observer missed an intermediate state (OD-010) |
+| `activeConditions` | **not emitted** — neither protocol carries them, and inferring them from telemetry would duplicate the equipment's thresholds and still miss the trips (OD-010) |
+| `aiEligible` | always present, `state == RUNNING` |
 
 The interval is bound by `stateRefreshInterval + worst-case produce-to-consume latency +
 clockSkewBudget < 10 s`, gate 10's limit. At 2 s that leaves 7.75 s for latency, and costs

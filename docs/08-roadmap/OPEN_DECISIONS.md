@@ -594,7 +594,7 @@ The Safety Supervisor's exception — reject first, then DLQ, never "skip and co
 
 ---
 
-# OD-010 — OPEN — what an equipment-state record may claim that the gateway cannot observe
+# OD-010 — RESOLVED 2026-09-29 — what an equipment-state record may claim that the gateway cannot observe
 
 > Raised 2026-09-29 while starting Phase 3 step 4, binding the gateway's egress to
 > `factory.equipment-states.v1`. Two fields of `equipment-state.schema.json` ask the gateway for
@@ -682,3 +682,14 @@ the Supervisor gate is a field read", yet leaves it out of `required`. A field t
 read cannot be optional. Recommendation: **make it required** — a pre-producer amendment under
 `EVENT_CONTRACTS.md` §5, the same exception already recorded for `gatewayEpoch`, and still open
 because the topic has no producer yet.
+
+## Decision — as revised by the challenge, confirmed by the product owner 2026-09-29
+
+1. **`activeConditions`: omitted** by the gateway, removed from the validated example, and described
+   in the schema as absent until the protocol mapping carries condition identity for **both**
+   protocols (option C, when a consumer names a need for it).
+2. **`transitionId`: the table is fixed.** T13–T16 are added to `EQUIPMENT_MODEL_AND_STATE.md` §3.2
+   and the schema pattern widens to `T1`–`T16`. `null` is reserved for an observed change that is
+   **not representable as one transition** — an intermediate state the observer never saw.
+3. **`aiEligible`: required.** A pre-producer amendment under `EVENT_CONTRACTS.md` §5, recorded in
+   that section's table beside `gatewayEpoch`.
