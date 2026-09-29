@@ -12,8 +12,10 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <!-- ADR-0021: a fresh broker per run, on the image pinned there. -->
-    <PackageReference Include="Testcontainers.Kafka" Version="4.15.0" />
+    <!-- ADR-0021: a fresh broker per test class, on the image pinned there. The Kafka *module*
+         (Testcontainers.Kafka) cannot start the Apache image - see KafkaBroker - so this is the
+         core package and an explicit container definition. -->
+    <PackageReference Include="Testcontainers" Version="4.15.0" />
   </ItemGroup>
 
   <ItemGroup>

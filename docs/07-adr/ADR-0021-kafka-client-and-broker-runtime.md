@@ -82,7 +82,7 @@ Both use the **same image tag**, so the container the tests run is the container
 | Component | Package / image | Version |
 |---|---|---|
 | all Kafka producers and consumers | `Confluent.Kafka` | `2.15.1` |
-| integration tests | `Testcontainers.Kafka` (with `Testcontainers`) | `4.15.0` |
+| integration tests | `Testcontainers` | `4.15.0` — **not** `Testcontainers.Kafka`, see the amendment below |
 | local and CI broker | `apache/kafka` (KRaft) | `4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837` |
 
 **Testcontainers is given that same image explicitly.** Its Kafka module has its own default image,
@@ -153,6 +153,33 @@ consults Kafka (`ADR-0009`).
 `Confluent.Kafka` supports SASL/SCRAM and mTLS through `librdkafka`. The **demo profile runs
 PLAINTEXT on a private compose network**, exactly as the OPC UA demo profile runs `SecurityPolicy
 None`, and switching profiles is a `SECURITY_BOUNDARIES.md` decision rather than a code change.
+
+## Amendment 2026-09-29 — the Kafka module cannot start the pinned image
+
+`Testcontainers.Kafka` 4.15.0 does not work with `apache/kafka:4.3.1`. Its Apache path writes the
+advertised listeners into a startup script **after** the container is running — the mapped port is
+not known before that — while the Apache image formats its storage in its own entrypoint and exits
+first:
+
+```
+Exception in thread "main" org.apache.kafka.common.config.ConfigException:
+Configuration 'advertised.listeners' values must not be empty.
+    at kafka.tools.StorageTool$.execute(StorageTool.scala:79)
+```
+
+Reproduced with and without the digest, and with a placeholder `KAFKA_ADVERTISED_LISTENERS`
+environment variable, which the module overrides. The same image starts correctly from a plain
+`docker run` with the variables the broker actually needs.
+
+**Decision: use the `Testcontainers` core package and define the container explicitly**
+(`EventBackbone.Tests/KafkaBroker.cs`). The port is chosen by the test before the container starts,
+so the advertised listener is correct at format time. This also settles B7 by construction: the
+image is named in one place and there is no module default to drift onto — the module's default is
+`confluentinc/cp-kafka`, a different distribution from the one `deploy/compose/` will run.
+
+The alternative — switching the pinned image to `confluentinc/cp-kafka` so the module works — was
+rejected: it trades the Apache distribution this ADR chose for the convenience of a test helper,
+and the Confluent Community licence was already rejected above.
 
 ## Evidence gathered before acceptance
 
@@ -239,8 +266,9 @@ alongside the classic one, and which is in force changes rebalance and replay be
 pins the protocol and the assignment strategy rather than inheriting a default that differs between
 client and broker versions.
 
-**B7 — Testcontainers is given the pinned image.** Its Kafka module has its own default image, which
-is not this one. Asserted in the test project, so the tests cannot drift onto another distribution.
+**B7 — Testcontainers is given the pinned image. DONE 2026-09-29.** Satisfied by dropping the Kafka
+module: the container is defined explicitly and the image constant lives in one place
+(`KafkaBroker.Image`). See the amendment above for why the module could not be used at all.
 
 **B8 — Docker-dependent tests fail loudly.** The Kafka integration suites need a daemon; they are
 marked as such and **run in CI**. A suite that silently skips when Docker is missing has stopped

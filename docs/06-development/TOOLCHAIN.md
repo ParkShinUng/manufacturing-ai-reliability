@@ -33,7 +33,7 @@ adding a package reference or a lock file before it is would be starting the pha
 |---|---|---|---|
 | Kafka producers and consumers | `Confluent.Kafka` | **2.15.1** | Apache-2.0 (package metadata) |
 | — its only dependency | `librdkafka.redist` | **2.15.1** | BSD-2-Clause plus 14 permissive components, read from the packaged `LICENSES.txt` |
-| integration tests | `Testcontainers`, `Testcontainers.Kafka` | **4.15.0** | MIT |
+| integration tests | `Testcontainers` | **4.15.0** | MIT |
 | local and CI broker | `apache/kafka` | **4.3.1**, digest `sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837` | Apache-2.0 |
 
 Two licence items are **open** and are Phase 3 spike conditions, not claims this table makes:
