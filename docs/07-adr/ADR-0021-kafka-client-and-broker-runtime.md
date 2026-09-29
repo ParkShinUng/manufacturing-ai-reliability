@@ -278,8 +278,10 @@ module: the container is defined explicitly and the image constant lives in one 
 
 **B8 — Docker-dependent tests fail loudly. PARTIAL 2026-09-29.** The "fail, don't skip" half is
 **observed**: with the Docker daemon stopped, all three `TopicBootstrapTests` failed rather than
-skipping. The "run in CI" half **cannot be met yet — this repository has no CI configuration at
-all**, which is the finding, not a detail. It is recorded here rather than claimed. A suite that silently skips when Docker is missing has stopped
+skipping. The "run in CI" half could not be met — **the repository had no CI configuration
+at all** — and that was the finding, not a detail. `ADR-0023` adds it (2026-09-29); the `dotnet` job
+checks for a Docker daemon first and fails without one. **B8 closes on the first green run on
+GitHub**, not on the commit that adds the workflow. A suite that silently skips when Docker is missing has stopped
 being evidence — `LOAD-001`'s `MAIR_LOAD_TEST` gate is opt-**in** for a long run, not a precedent
 for skipping correctness tests.
 

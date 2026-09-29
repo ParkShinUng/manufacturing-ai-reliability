@@ -2,10 +2,14 @@
 
 The baseline favors supported/LTS or mature stable releases over preview releases.
 
-- .NET SDK: **10.0.400**, target framework `net10.0`, C# 14 — *verified installed 2026-09-15; the
-  previously asserted 10.0.401 was never verified and is corrected here per the procedure below*
+- .NET SDK: **10.0.400** in `global.json` with `rollForward: latestPatch`, target framework
+  `net10.0`, C# 14. *As of 2026-09-29 the development machine has **10.0.401** and no 10.0.400, and
+  builds on it through `latestPatch`, which is what that policy is for; CI installs the version
+  `global.json` names.*
 - Python: **3.13.15** for conservative ML package compatibility
-- Node.js: **24 LTS**; pin exact patch in `.nvmrc`/container at repository initialization
+- Node.js: **24.13.0**, pinned in `.nvmrc` (2026-09-29). This line used to say the patch would be
+  pinned "at repository initialization"; it never was, and CI (`ADR-0023`) is what made the gap
+  matter.
 - Apache Kafka: **4.3.1**, KRaft mode
 - Kubernetes development target: **1.36.x** stable patch line; do not depend on 1.37-only APIs in baseline
 - PostgreSQL: major **18**, exact patch pinned in container manifest at repository initialization

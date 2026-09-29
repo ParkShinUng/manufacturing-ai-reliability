@@ -1,0 +1,56 @@
+# ADR-0023. Runs only what the documents already claim CI runs; deploys and publishes nothing.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: contract checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Actions are pinned by commit SHA: a tag can be moved, a SHA cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - run: node tests/contract/validate_examples.mjs
+      - run: node tests/contract/consistency_check.mjs
+      - run: node tests/contract/safety_invariants.mjs
+      - run: node tests/contract/ac_traceability.mjs
+
+  dotnet:
+    name: build, licence gate, tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      # ADR-0021 B8: the Kafka suites need a daemon, and a missing daemon fails the job rather than
+      # letting those suites turn into a silent skip.
+      - name: Docker must be available
+        run: docker info --format 'Docker {{.ServerVersion}} on {{.OSType}}/{{.Architecture}}'
+
+      # --locked-mode: the committed lock files are the graph, not a starting point.
+      - run: dotnet restore src/dotnet/Mair.sln --locked-mode
+      - name: Licence gate
+        run: node scripts/license-scan.mjs
+      - run: dotnet build src/dotnet/Mair.sln --no-restore
+      - run: dotnet test src/dotnet/Mair.sln --no-build

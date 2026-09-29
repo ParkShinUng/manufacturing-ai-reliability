@@ -591,3 +591,55 @@ otherwise refuses. It is justified **only** under these limits:
 
 The Safety Supervisor's exception — reject first, then DLQ, never "skip and continue"
 (`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §9) — stands whichever option is chosen, and is Phase 6 work.
+
+---
+
+# OD-010 — OPEN — what an equipment-state record may claim that the gateway cannot observe
+
+> Raised 2026-09-29 while starting Phase 3 step 4, binding the gateway's egress to
+> `factory.equipment-states.v1`. Two fields of `equipment-state.schema.json` ask the gateway for
+> something the contracts never gave it a way to know. `CLAUDE.md`: an ambiguity is written down
+> and decided, not guessed.
+
+## 1. `activeConditions`
+
+The schema has an `activeConditions` array — `VIBRATION_HIGH`, `TEMPERATURE_TRIP`, and so on — and
+the documented example populates it. But **neither protocol carries the equipment's conditions.**
+`OT_PROTOCOL_MAPPING.md` gives Modbus register `+22` (`statusBitmap`) exactly one meaningful bit,
+fault-injection-active, with bits 1–15 reserved; the OPC UA address space has no conditions node.
+The simulator knows its conditions; the gateway is never told them.
+
+Nothing consumes the field today: the Safety Supervisor's gate 10 reads `state`, and
+`aiEligible` is derived from it. So this is not a safety gap. It is a contract that describes data
+no producer can honestly fill.
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Omit it.** The field is optional; the gateway does not emit what it cannot observe. The schema's description and the example are corrected to say it is populated only once a protocol carries conditions | none now; the example currently implies the opposite, and must change |
+| B | The gateway **derives** the conditions it can see from telemetry — `QUALITY_UNCERTAIN` from `quality.overall`, `VIBRATION_HIGH` above 12.0 mm/s, `TEMPERATURE_HIGH` above 95 °C | re-implements the equipment's thresholds in a second place, where they can drift; trip conditions cannot be derived at all, so the list would be silently partial |
+| C | **Extend the protocol mapping** to carry a conditions bitmap — register `+22` bits 1–15, and an OPC UA node | a contract change on both protocols and the simulator; the right answer if a consumer ever needs the field |
+
+**Recommendation: A.** A field that claims to list the equipment's conditions and silently lists
+only the ones a gateway happened to be able to infer is worse than an absent field — the same
+reasoning `ADR-0018` applies to measurements. C is the real fix when something needs it; nothing
+does yet.
+
+## 2. `transitionId` for a change that is not in the table
+
+`transitionId` is `T1`–`T12` from `EQUIPMENT_MODEL_AND_STATE.md` §3.2, and nullable. An observer
+sees changes the table does not name:
+
+- connecting to a machine that is **already** `DEGRADED`, `FAULT` or `STOPPING` — the table has
+  `CONNECTING → IDLE` (T2) and `CONNECTING → RUNNING` (T3) only;
+- an intermediate state the observer never saw, when the equipment passed through it between two
+  samples.
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **`null`**, defined to mean "an observed change that is not one documented transition" | a consumer must handle `null`; the schema already allows it |
+| B | Pick the nearest documented transition | a fabricated fact — the same substitution `ADR-0018` forbids for values |
+| C | Suppress the record until a documented transition is seen | the consumer's view of state stalls exactly when it is least certain |
+
+**Recommendation: A.** It is the only option that does not invent information. The table gap for
+connecting to a machine in a non-`IDLE`, non-`RUNNING` state is recorded here too: it is real, and
+`null` is how an honest observer reports it.
