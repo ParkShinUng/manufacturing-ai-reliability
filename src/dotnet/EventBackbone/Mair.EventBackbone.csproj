@@ -9,6 +9,9 @@
   <ItemGroup>
     <!-- ADR-0021. Pinned exactly; the transitive graph is locked by packages.lock.json. -->
     <PackageReference Include="Confluent.Kafka" Version="2.15.1" />
+    <!-- ADR-0022: validates raw UTF-8 bytes against the contract schemas, so the bytes checked
+         are the bytes that reach the DLQ. -->
+    <PackageReference Include="Corvus.Text.Json.Validator" Version="5.6.1" />
   </ItemGroup>
 
   <ItemGroup>

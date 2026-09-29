@@ -259,19 +259,27 @@ case.
 **B5 — every semantic in the Context table proved by a smoke test**: idempotent producer with
 `acks=all`, manual commit, seek and rewind, `seekToEnd` on the Supervisor's group **after**
 assignment (§6.1 — before assignment it silently does nothing), a null-valued tombstone (`OD-008`),
-and headers surviving a round trip.
+and headers surviving a round trip. **PARTIAL 2026-09-29** — proven by `ContractConsumerTests`:
+the idempotent `acks=all` producer, manual commit (the committed offset is asserted, including
+that it does **not** advance when the DLQ produce fails), and headers surviving onto the DLQ
+record. **Still open:** seek and rewind (`AC-045`), `seekToEnd` after assignment, and tombstones —
+each lands with the work that needs it.
 
-**B6 — the consumer group protocol is pinned.** Kafka 4.x ships the KIP-848 rebalance protocol
-alongside the classic one, and which is in force changes rebalance and replay behaviour. Phase 3
-pins the protocol and the assignment strategy rather than inheriting a default that differs between
-client and broker versions.
+**B6 — the consumer group protocol is pinned. DONE 2026-09-29.** `ContractConsumer` overrides
+whatever it is given with `group.protocol=classic` and `partition.assignment.strategy=range`, plus
+auto-commit and auto-offset-store off and topic auto-creation off. Classic and eager rather than
+KIP-848 or cooperative-sticky: replay (`AC-045`) rewinds a whole group over a known range, and an
+eager rebalance is the model that is simplest to reason about for that. The choice is revisitable;
+inheriting it silently is what B6 forbids.
 
 **B7 — Testcontainers is given the pinned image. DONE 2026-09-29.** Satisfied by dropping the Kafka
 module: the container is defined explicitly and the image constant lives in one place
 (`KafkaBroker.Image`). See the amendment above for why the module could not be used at all.
 
-**B8 — Docker-dependent tests fail loudly.** The Kafka integration suites need a daemon; they are
-marked as such and **run in CI**. A suite that silently skips when Docker is missing has stopped
+**B8 — Docker-dependent tests fail loudly. PARTIAL 2026-09-29.** The "fail, don't skip" half is
+**observed**: with the Docker daemon stopped, all three `TopicBootstrapTests` failed rather than
+skipping. The "run in CI" half **cannot be met yet — this repository has no CI configuration at
+all**, which is the finding, not a detail. It is recorded here rather than claimed. A suite that silently skips when Docker is missing has stopped
 being evidence — `LOAD-001`'s `MAIR_LOAD_TEST` gate is opt-**in** for a long run, not a precedent
 for skipping correctness tests.
 

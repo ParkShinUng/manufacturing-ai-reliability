@@ -301,6 +301,18 @@ redrives automatically · the following valid record is processed, proving the c
 **Negative case, required:** a valid record must **not** reach the DLQ. Without it, a component that
 DLQ'd everything would pass.
 
+**Automated 2026-09-29** — `ContractConsumerTests`, real broker, the production `ContractConsumer`.
+Beyond the specification above it also asserts that an **unparseable** record is DLQ'd rather than
+crashing the consumer (ADR-0022 condition 5), that a handler failure is retried on §9's 1 s / 2 s
+schedule and DLQ'd after the third attempt, and that when the DLQ produce itself **fails** the
+source offset is not committed and the record is redelivered.
+
+`AC-027` proves routing, not validator correctness, so the validator has its own suite,
+`ContractSchemaTests` (ADR-0022 conditions 1 and 2): every documented example validates against the
+schema `_manifest.json` pairs it with; each of the 23 validation keywords the contract schemas use
+rejects an invalid case **and** accepts a valid one; and an inventory test fails if a schema starts
+using a keyword with no case.
+
 ## 5. Load test specifications
 
 | ID | Scenario | Asserts |

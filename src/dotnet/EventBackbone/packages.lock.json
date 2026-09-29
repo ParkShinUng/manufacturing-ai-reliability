@@ -11,10 +11,32 @@
           "librdkafka.redist": "2.15.1"
         }
       },
+      "Corvus.Text.Json.Validator": {
+        "type": "Direct",
+        "requested": "[5.6.1, )",
+        "resolved": "5.6.1",
+        "contentHash": "O+14HpHrM9+LVFvS8q1MIxLNpH5BL+9kFXZ2W8OmwIEiG8e3VuflWKGG7kxMUV7nCnGCWXIpWx/BVVFzyyMkmg==",
+        "dependencies": {
+          "Corvus.Text.Json": "5.6.1"
+        }
+      },
+      "Corvus.Text.Json": {
+        "type": "Transitive",
+        "resolved": "5.6.1",
+        "contentHash": "l2lXd2xf1Z4mEZKdpvf6mXx5HDg7v4/A4E5YE4Nt1KVAaRdsbbPxIt0SvDcoR04Y5jwjGSYibe0fbMVFtSGoLw==",
+        "dependencies": {
+          "NodaTime": "3.3.1"
+        }
+      },
       "librdkafka.redist": {
         "type": "Transitive",
         "resolved": "2.15.1",
         "contentHash": "fhRs/2fY80isR9zqrCkDdEhrp5Vi4Lxetg6yjhBl2uNiQs9Z2StA/Q8WqkJmj5OqmG8BQaP6OXvzbGngqXid+w=="
+      },
+      "NodaTime": {
+        "type": "Transitive",
+        "resolved": "3.3.1",
+        "contentHash": "7zkTEqmakybTTuDuifpnzl5s8MkmpAdyvoqIPIO2+M2ThF8ixavPcPt1afPfFyCI+A6t3ySujgpGq/5iWc4/RQ=="
       }
     }
   }

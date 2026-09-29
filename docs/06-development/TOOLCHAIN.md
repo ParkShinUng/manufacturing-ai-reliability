@@ -34,6 +34,7 @@ adding a package reference or a lock file before it is would be starting the pha
 | Kafka producers and consumers | `Confluent.Kafka` | **2.15.1** | Apache-2.0 (package metadata) |
 | — its only dependency | `librdkafka.redist` | **2.15.1** | BSD-2-Clause plus 14 permissive components, read from the packaged `LICENSES.txt` |
 | integration tests | `Testcontainers` | **4.15.0** | MIT |
+| schema validation in the shared consumer | `Corvus.Text.Json.Validator` | **5.6.1** | Apache-2.0 — ADR-0022, chosen after `NJsonSchema` was measured ignoring `const` and `JsonSchema.Net`'s NuGet binary was found to carry a maintenance-fee agreement |
 | local and CI broker | `apache/kafka` | **4.3.1**, digest `sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837` | Apache-2.0 |
 
 Two licence items are **open** and are Phase 3 spike conditions, not claims this table makes:
@@ -55,8 +56,8 @@ Both steps this section previously listed as outstanding are **done**.
 restore on another machine can resolve a different transitive graph — the same class of problem as a
 floating container tag.
 
-**Licence scan of the full graph: 48 packages, all permissive** *(re-run 2026-09-28 after Phase 3's
-packages were added; it was 29 in Phase 2)*. Run with `node scripts/license-scan.mjs`, which reads
+**Licence scan of the full graph: 50 packages, all permissive** *(re-run 2026-09-29 after ADR-0022's
+validator was added; 48 on 2026-09-28, 29 in Phase 2)*. Run with `node scripts/license-scan.mjs`, which reads
 the `.nuspec` and, where the package ships a licence file, the file itself from the NuGet cache.
 
 | Licence | Packages |

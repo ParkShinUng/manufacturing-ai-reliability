@@ -105,8 +105,11 @@ surfaced, is resolved.
 >    the projects are created with the pinned packages, restored with lock files, and
 >    `scripts/license-scan.mjs` is run over the whole graph (B1, B2, B3).
 > 2. **Topic bootstrap** — `AC-026`, `KAFKA-001`, including partition-count immutability (B4).
+>    **Done 2026-09-29**, on a real broker.
 > 3. **The shared consume-validate-DLQ component** — `AC-027`, `KAFKA-002`, bounded as `OD-009`
 >    requires, with the client semantics smoke tests (B5) and the pinned group protocol (B6).
+>    **Done 2026-09-29.** Schema validation needed a dependency decision first — `ADR-0022`, where
+>    the first recommendation was rejected by Codex and the spike changed the package.
 > 4. **Binding the gateway's egress port** — telemetry and the equipment-state stream `OD-008`
 >    specified: 2 s refresh, `gatewayEpoch`, tombstones.
 > 5. **Replay mechanics** — `AC-045`, `FAIL-KAFKA-001`.
