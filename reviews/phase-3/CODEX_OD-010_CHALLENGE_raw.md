@@ -1,0 +1,20 @@
+# Codex challenge - OD-010 (what an equipment-state record may claim)
+
+> Raw output, transcribed verbatim from the `codex exec` run of 2026-09-29. Read-only, before the
+> product owner decides.
+
+OD-010-001 - P2 - `contracts/examples/equipment-state.json:13` - The canonical example populates `activeConditions` even though the Phase 3 gateway has no protocol input for it - examples are validated contract evidence, so this teaches implementers to emit a field they cannot honestly know - recommended fix: choose A now; remove `activeConditions` from the example and add schema prose saying it is omitted until the OT mapping carries condition identity.
+
+OD-010-002 - P3 - `docs/08-roadmap/OPEN_DECISIONS.md:611` - “Nothing consumes the field today” is too broad: `factory.equipment-states.v1` is consumed by the Safety Supervisor and operations-projector (`docs/03-contracts/KAFKA_TOPOLOGY_AND_SEMANTICS.md:25`, `:57`) - the true claim is narrower: no documented consumer reads `activeConditions` specifically - recommended fix: reword before decision so the product owner does not miss the operations-read-model dependency.
+
+OD-010-003 - P2 - `docs/03-contracts/OT_PROTOCOL_MAPPING.md:201` - Option C is cheaper than adding a new register because Modbus already has reserved `statusBitmap` capacity, but it is not “free”: OPC UA has no corresponding node (`docs/03-contracts/OT_PROTOCOL_MAPPING.md:37`) and the simulator protocol layer exposes no active-condition node (`src/dotnet/EquipmentSimulator.Protocols/MairNodeManager.cs:127`) - choosing C requires protocol parity and condition-bit semantics, not just flipping reserved bits - recommended fix: keep A unless a consumer is named; if C is chosen, define a closed condition bitmap for both Modbus and OPC UA in one contract change.
+
+OD-010-004 - P2 - `docs/02-architecture/EQUIPMENT_MODEL_AND_STATE.md:198` - The transition table omits real observed transitions out of `CONNECTING`: first telemetry can report `DEGRADED`, `FAULT`, or `STOPPING`; connect timeout also moves `CONNECTING` to `OFFLINE` without a transition ID - using `null` is honest for skipped/intermediate changes, but this table gap is a model defect, not just an observer uncertainty - recommended fix: fix the table for direct observed `CONNECTING -> {DEGRADED, FAULT, STOPPING, OFFLINE}` transitions, and update `equipment-state.schema.json:69` if new IDs exceed `T12`.
+
+OD-010-005 - P3 - `contracts/jsonschema/v1/equipment-state.schema.json:64` - `transitionId` being nullable does not break current consumers: refresh records already omit it (`docs/11-service-design/EDGE_GATEWAY.md:78`), Safety Supervisor gate 10 uses state/observation age (`docs/11-service-design/SAFETY_SUPERVISOR.md:119`), and Operations API summaries do not expose it (`contracts/openapi/operations-api-v1.yaml:306`) - this supports null for genuinely unclassifiable observations, but not as a substitute for missing transition definitions - recommended fix: define null as “observed change not representable as one transition,” after fixing the known table gaps.
+
+OD-010-006 - P3 - `contracts/jsonschema/v1/equipment-state.schema.json:87` - `aiEligible` is producible because `RUNNING` is the only eligible state (`docs/02-architecture/EQUIPMENT_MODEL_AND_STATE.md:191`), but the schema description says it is carried explicitly for a Supervisor field read while the required list omits it (`contracts/jsonschema/v1/equipment-state.schema.json:8`) - this is not an observability blocker, but it leaves producer/consumer expectations loose - recommended fix: either make `aiEligible` required or change the description to say consumers may derive it from `state`.
+
+ACTIVE_CONDITIONS: A - safest now; no documented consumer reads the field, B would create partial inferred truth, and C is a real protocol/schema change despite being technically small on Modbus.
+
+TRANSITION_ID: FIX_TABLE - use `null` for genuinely skipped/ambiguous observations, but first fix the missing `CONNECTING` transitions so known state-machine facts are not papered over.

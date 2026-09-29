@@ -276,7 +276,12 @@ inheriting it silently is what B6 forbids.
 module: the container is defined explicitly and the image constant lives in one place
 (`KafkaBroker.Image`). See the amendment above for why the module could not be used at all.
 
-**B8 — Docker-dependent tests fail loudly. PARTIAL 2026-09-29.** The "fail, don't skip" half is
+**B8 — Docker-dependent tests fail loudly. DONE 2026-09-29** — closed by the first CI run,
+[run 36538618859](https://github.com/ParkShinUng/manufacturing-ai-reliability/actions/runs/36538618859)
+on commit `1f55ae4`: both jobs green on `ubuntu-24.04`, the Docker check passed, and the test step
+took 77 s, consistent with every suite running rather than none being found. The Kafka suites have
+no skip path, so a green job means they ran against the pinned image on a Linux runner — the first
+time any of them had run anywhere but Windows. *History:* The "fail, don't skip" half is
 **observed**: with the Docker daemon stopped, all three `TopicBootstrapTests` failed rather than
 skipping. The "run in CI" half could not be met — **the repository had no CI configuration
 at all** — and that was the finding, not a detail. `ADR-0023` adds it (2026-09-29); the `dotnet` job

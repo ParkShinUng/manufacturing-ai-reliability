@@ -643,3 +643,42 @@ sees changes the table does not name:
 **Recommendation: A.** It is the only option that does not invent information. The table gap for
 connecting to a machine in a non-`IDLE`, non-`RUNNING` state is recorded here too: it is real, and
 `null` is how an honest observer reports it.
+
+## Codex challenge, 2026-09-29 — and what it changes
+
+`reviews/phase-3/CODEX_OD-010_CHALLENGE_raw.md`. Codex agreed on part 1 and disagreed on part 2, and
+found a third item. Each was checked against the documents before being written here.
+
+**Part 1 — `activeConditions`: A holds, with two corrections.** "Nothing consumes the field" was too
+broad: `factory.equipment-states.v1` is consumed by the Supervisor and the operations projector.
+What is true is narrower — **no documented consumer reads `activeConditions`**. And A is not
+complete without fixing the evidence that points the other way: the validated example populates the
+field, which teaches an implementer to emit what cannot be known. So A now means: omit the field,
+**remove it from the example**, and say in the schema description that it is absent until the
+protocol mapping carries condition identity. C remains the real fix, and Codex adds that it is not
+just the reserved Modbus bits — OPC UA has no matching node, so it needs a closed bitmap defined
+for both protocols in one contract change.
+
+**Part 2 — `transitionId`: the recommendation changes from A to FIX_TABLE.** `null` is honest for an
+intermediate state the observer genuinely never saw. It is not honest as a patch over transitions
+the model simply forgot. §3.2 has no row for a first observation of a machine that is already
+`DEGRADED`, `FAULT` or `STOPPING`, and the `connect_timeout` return to `OFFLINE` exists only in T2's
+timeout column, with no ID. Those are known state-machine facts, and a table missing them is a
+model defect. Revised recommendation:
+
+| ID | From | To | Trigger |
+|---|---|---|---|
+| T13 | `CONNECTING` | `DEGRADED` | first valid telemetry reports `DEGRADED` |
+| T14 | `CONNECTING` | `FAULT` | first valid telemetry reports `FAULT` |
+| T15 | `CONNECTING` | `STOPPING` | first valid telemetry reports `STOPPING` |
+| T16 | `CONNECTING` | `OFFLINE` | `connect_timeout` 10 s with no valid telemetry |
+
+— with the schema pattern widened to `T1`–`T16`, and `null` kept **only** for an observed change
+that is not representable as one transition. None of T13–T16 makes a machine AI-eligible, and none
+touches the forbidden transitions: `FAULT → RUNNING` and `OFFLINE → RUNNING` stay impossible.
+
+**Part 3 — `aiEligible`, found by the challenge.** The schema describes it as carried explicitly "so
+the Supervisor gate is a field read", yet leaves it out of `required`. A field the gate is meant to
+read cannot be optional. Recommendation: **make it required** — a pre-producer amendment under
+`EVENT_CONTRACTS.md` §5, the same exception already recorded for `gatewayEpoch`, and still open
+because the topic has no producer yet.

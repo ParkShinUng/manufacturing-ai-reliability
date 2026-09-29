@@ -50,6 +50,11 @@ repository initialisation" and never was.
 B8 closes on the **first green run on GitHub**, not on the commit that adds this file. Until a run
 has been observed, the workflow is a claim; the run is the evidence.
 
+**Observed 2026-09-29:** [run 36538618859](https://github.com/ParkShinUng/manufacturing-ai-reliability/actions/runs/36538618859),
+both jobs green on the first attempt — contract checks 9 s; restore, licence gate, build and tests
+112 s, of which the test step was 77 s. The OPC UA certificate-store code and the Testcontainers
+Kafka suites had only ever run on Windows before this.
+
 ## Sources
 
 - `actions/checkout` v7.0.1 — `3d3c42e5aac5ba805825da76410c181273ba90b1`
