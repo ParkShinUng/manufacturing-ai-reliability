@@ -44,7 +44,8 @@ public sealed class ContractConsumer : IDisposable
         Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handler,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         Func<double>? jitter = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        bool seekToEndOnAssignment = false)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentException.ThrowIfNullOrWhiteSpace(topic);
@@ -59,7 +60,20 @@ public sealed class ContractConsumer : IDisposable
         _delay = delay ?? Task.Delay;
         _jitter = jitter ?? Random.Shared.NextDouble;
         _time = time ?? TimeProvider.System;
-        _consumer = new ConsumerBuilder<string, byte[]>(Harden(config)).Build();
+        var builder = new ConsumerBuilder<string, byte[]>(Harden(config));
+
+        if (seekToEndOnAssignment)
+        {
+            // §6.1: the Safety Supervisor discards any backlog on factory.predictions.v1 at every
+            // start. It has to be done here, on assignment: `auto.offset.reset=latest` applies only
+            // to a group with no committed offset, so a restarting consumer with committed offsets
+            // would otherwise grind through the backlog. And a seek issued before assignment silently
+            // does nothing, because there is not yet a partition to seek.
+            builder.SetPartitionsAssignedHandler((_, partitions) =>
+                partitions.Select(p => new TopicPartitionOffset(p, Offset.End)));
+        }
+
+        _consumer = builder.Build();
         _consumer.Subscribe(topic);
     }
 
@@ -89,6 +103,11 @@ public sealed class ContractConsumer : IDisposable
 
         // §2: topics come from the register, never from a consumer subscribing to a name.
         AllowAutoCreateTopics = false,
+
+        // §6, numerically.
+        MaxPollIntervalMs = 300_000,
+        SessionTimeoutMs = 45_000,
+        HeartbeatIntervalMs = 3_000,
     };
 
     /// <summary>

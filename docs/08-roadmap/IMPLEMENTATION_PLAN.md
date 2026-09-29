@@ -116,7 +116,12 @@ surfaced, is resolved.
 >    `EquipmentStateStream` and `KafkaEquipmentStateSink`, after `OD-010` settled what the record may
 >    claim. The poll loop drives it, and a failing state sink is an egress failure, never a protocol
 >    one.
-> 5. **Replay mechanics** — `AC-045`, `FAIL-KAFKA-001`.
+> 5. **Replay mechanics** — `AC-045`, `FAIL-KAFKA-001`. **Done 2026-09-29**: `ReplayTool` rewinds
+>    a replay-eligible group and refuses the Supervisor's and any unregistered one; the shared
+>    consumer can seek to the end on assignment (§6.1); a broker restart is absorbed within §11's
+>    budget. Two contract values were found unapplied on the way and applied:
+>    `min.insync.replicas` in the bootstrap, and §6's session, heartbeat and poll intervals in the
+>    consumer.
 >
 > Docker-dependent suites run in CI and fail rather than skip (B8).
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset

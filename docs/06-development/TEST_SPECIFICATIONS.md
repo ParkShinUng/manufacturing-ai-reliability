@@ -139,6 +139,18 @@ range, in key order · offsets commit only **after** successful processing · a 
 identically and that the Supervisor issues no command — neither of which exists in Phase 3. Those
 are `PROJ-001` and `FAIL-KAFKA-002` below.
 
+**Automated 2026-09-29** — `ReplayTests`, real broker. A replay-eligible group rewound to record 4 of
+ten reads exactly records 4–9, in order, once each, and its committed offset returns past the end.
+`cg.safety-supervisor.v1` is refused with DEC-002 in the reason and its committed offset does not
+move; an unregistered group is refused too. A consumer with committed offsets at the start of a
+ten-record backlog and the §6.1 seek on assignment receives only the record produced after it was
+assigned. The broker is stopped for 5 s while the gateway keeps emitting: `Emit` does not block, all
+twenty records are delivered with no delivery failure, and a consumer reads them within 30 s.
+
+The "drops **oldest** only" clause is proven where the dropping happens, in `BoundedEgressBuffer`'s
+own tests (Phase 2): a 5 s restart is inside the client's 30 s delivery budget, so nothing is
+dropped in this one.
+
 ### FAIL-KAFKA-002 — replay moves no equipment → AC-003 *(Phase 6)*
 **Setup:** Supervisor running, mode `AI_ASSISTED`, gates passing, a known range of historical
 predictions on `factory.predictions.v1`.
@@ -210,6 +222,17 @@ in-process, the simulator being tick-driven. `LoadScenarioTests.Ac001_*` runs th
 every record through the **real** servers, clients and poll loops, per protocol, for a few seconds
 in every suite run (COD-P2-006); the 30 wall-clock minutes on that path are `LOAD-001`.
 
+**Known intermittent, recorded 2026-09-29, not yet explained.** `LoadScenarioTests.Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription`
+failed **once in eleven** full local runs of `dotnet test src/dotnet/Mair.sln`, the run right after
+Phase 3's broker-restart and replay suites were added. It passed alone, and in the eight full runs
+that followed. The failure message was not captured — the command that caught it filtered for the
+test name only — so the cause is **not known**. The working hypothesis is CPU contention: test
+projects run in parallel, and the Kafka suites now start containers and restart a broker while this
+test holds twenty OPC UA sessions whose keep-alive is 500 ms. It is recorded rather than "fixed" by
+serialising the test projects, because that would be a change made for a cause nobody has seen.
+If it recurs, the assertion message says which loop and why — `LastFailure` is in it — and CI logs
+print it in full.
+
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
 **Trigger:** collect paired samples over 5 minutes across the full rate range, including a slew.
@@ -280,6 +303,9 @@ equal the register — including `factory.equipment-states.v1` at `compact` with
 exits non-zero with the topic named, because a changed partition count silently re-keys a keyed
 topic and destroys per-key ordering (§4) · no topic is auto-created by a producer or consumer at any
 point in the run.
+
+`min.insync.replicas` is asserted too — `1` locally — since 2026-09-29, when it was found missing
+from the bootstrap: §6 calls it the required companion to `acks=all`.
 
 **Immutability is ours to enforce, not Kafka's.** `AdminClient.CreatePartitionsAsync` exists and the
 broker will increase a partition count on request (ADR-0021). The bootstrap therefore describes the

@@ -66,6 +66,43 @@ public sealed class KafkaBroker : IAsyncLifetime
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
 
+    /// <summary>
+    /// Stops and restarts the same container, for <c>FAIL-KAFKA-001</c>. The host port was chosen
+    /// by this fixture, so it survives the restart, and the container's log directory survives a
+    /// stop - the broker comes back with its topics and offsets.
+    /// </summary>
+    public async Task RestartAsync(TimeSpan down)
+    {
+        await _container.StopAsync();
+        await Task.Delay(down);
+        await _container.StartAsync();
+
+        // The wait strategy can match the previous run's "started" line, so readiness is proven
+        // by asking the broker for metadata rather than by reading its log.
+        using var admin = Admin();
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (true)
+        {
+            try
+            {
+                if (admin.GetMetadata(TimeSpan.FromSeconds(2)).Brokers.Count > 0)
+                {
+                    return;
+                }
+            }
+            catch (KafkaException) when (DateTime.UtcNow < deadline)
+            {
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new TimeoutException("the broker did not come back within 60 s");
+            }
+
+            await Task.Delay(500);
+        }
+    }
+
     public IAdminClient Admin() =>
         new AdminClientBuilder(new AdminClientConfig { BootstrapServers = BootstrapServers }).Build();
 

@@ -83,7 +83,7 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
         var described = await admin.DescribeConfigsAsync([resource], new DescribeConfigsOptions { RequestTimeout = AdminTimeout });
         var live = described.Single().Entries;
 
-        foreach (var (key, expected) in Configuration(spec))
+        foreach (var (key, expected) in Configuration(spec, productionLike))
         {
             var actual = live.TryGetValue(key, out var entry) ? entry.Value : "(absent)";
             if (actual != expected)
@@ -103,11 +103,15 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
         Name = spec.Name,
         NumPartitions = spec.Partitions,
         ReplicationFactor = TopicSpec.ReplicationFactor(productionLike),
-        Configs = Configuration(spec),
+        Configs = Configuration(spec, productionLike),
     };
 
-    private static Dictionary<string, string> Configuration(TopicSpec spec) => new()
+    private static Dictionary<string, string> Configuration(TopicSpec spec, bool productionLike) => new()
     {
+        // §6: the required companion to acks=all. Without it, acks=all silently degrades to a single
+        // replica whenever the in-sync set shrinks. 1 locally, where there is one broker; 2
+        // production-like, with three replicas.
+        ["min.insync.replicas"] = productionLike ? "2" : "1",
         ["cleanup.policy"] = spec.Cleanup == CleanupPolicy.Compact ? "compact" : "delete",
 
         // -1 is Kafka's infinite retention. A compacted state topic needs it: §5 has the Supervisor

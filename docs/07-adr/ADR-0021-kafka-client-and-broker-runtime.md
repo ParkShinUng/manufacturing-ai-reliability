@@ -264,8 +264,10 @@ the idempotent `acks=all` producer, manual commit (the committed offset is asser
 that it does **not** advance when the DLQ produce fails), and headers surviving onto the DLQ
 record. **Tombstones done 2026-09-29** — `EquipmentStateStreamTests` produces one through
 `KafkaEquipmentStateSink` and reads it back from the compacted topic as a null value under the
-equipment's key. **Still open:** seek and rewind (`AC-045`) and `seekToEnd` after assignment, both
-in step 5.
+equipment's key. **Seek and rewind, and `seekToEnd` after assignment, done 2026-09-29** —
+`ReplayTests`. B5 is **closed**. The `seekToEnd` test was mutation-checked: with the option turned
+off it fails, delivering the ten-record backlog, so it proves the override rather than passing
+around it.
 
 **B6 — the consumer group protocol is pinned. DONE 2026-09-29.** `ContractConsumer` overrides
 whatever it is given with `group.protocol=classic` and `partition.assignment.strategy=range`, plus

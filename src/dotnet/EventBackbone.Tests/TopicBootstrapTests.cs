@@ -51,6 +51,7 @@ public sealed class TopicBootstrapTests : IClassFixture<KafkaBroker>
             Assert.Equal(
                 spec.Retention is { } r ? ((long)r.TotalMilliseconds).ToString() : "-1",
                 config["retention.ms"]);
+            Assert.Equal("1", config["min.insync.replicas"]); // §6, local
         }
 
         // OD-008, asserted by name because it is the one the contract changed: infinite, compact,
