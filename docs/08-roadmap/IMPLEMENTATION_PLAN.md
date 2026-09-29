@@ -112,9 +112,10 @@ surfaced, is resolved.
 >    the first recommendation was rejected by Codex and the spike changed the package.
 > 4. **Binding the gateway's egress port** — telemetry and the equipment-state stream `OD-008`
 >    specified: 2 s refresh, `gatewayEpoch`, tombstones.
->    **Telemetry half done 2026-09-29** (`KafkaTelemetrySink`). **The equipment-state half waits for
->    `OD-010`**: the schema asks the gateway for `activeConditions` no protocol carries, and for a
->    `transitionId` on changes the transition table does not name.
+>    **Done 2026-09-29.** Telemetry through `KafkaTelemetrySink`; the equipment-state stream through
+>    `EquipmentStateStream` and `KafkaEquipmentStateSink`, after `OD-010` settled what the record may
+>    claim. The poll loop drives it, and a failing state sink is an egress failure, never a protocol
+>    one.
 > 5. **Replay mechanics** — `AC-045`, `FAIL-KAFKA-001`.
 >
 > Docker-dependent suites run in CI and fail rather than skip (B8).

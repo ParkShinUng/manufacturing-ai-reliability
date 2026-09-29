@@ -85,6 +85,22 @@ The gateway publishes its **observed** state for each equipment:
 | `activeConditions` | **not emitted** — neither protocol carries them, and inferring them from telemetry would duplicate the equipment's thresholds and still miss the trips (OD-010) |
 | `aiEligible` | always present, `state == RUNNING` |
 
+**Implemented 2026-09-29** — `EquipmentStateStream`, one per equipment, driven by the poll loop:
+`Connected` on a session (T1), `Observed` on each valid sample's reported state, `SessionLost` on a
+read failure (T11), and `Tick` every pass for the refresh and the `connect_timeout` (T16). Two
+behaviours worth stating because they are not obvious from the table:
+
+- **Telemetry after a connect timeout** is reported as `OFFLINE → CONNECTING` (T1) and then the
+  observed state, never `OFFLINE → RUNNING`, which §3.2 forbids.
+- **During an outage the refresh follows the loop**, and a loop pass is one backoff interval, up to
+  8 s. The `OFFLINE` refresh is therefore sparser than 2 s exactly while the machine is `OFFLINE` —
+  which is never AI-eligible, so gate 10 staleness then only confirms the fallback it would take
+  anyway.
+
+A stream refuses an `equipmentId` outside the schema's `^eq-[0-9]{3,6}$` at construction, rather
+than emitting an invalid record every two seconds. The first version of its own test used a hex id
+and the schema rejected the record, which is how that check came to exist.
+
 The interval is bound by `stateRefreshInterval + worst-case produce-to-consume latency +
 clockSkewBudget < 10 s`, gate 10's limit. At 2 s that leaves 7.75 s for latency, and costs
 `equipment / 2` records a second — 10/s at the demo profile, 125/s at `LOAD-002`'s 250 machines,
