@@ -29,3 +29,15 @@
 4. Anything from round 1's "looks correct" list that the new code disturbs — including whether
    sharing one broker across five test classes weakens any test's isolation (CLD-P3-003).
 5. Anything else.
+
+## Round 2 — result
+
+`CODEX_VERIFICATION_ROUND2_raw.md`, verdict **ACCEPT** (P0=0, P1=0). P3-COD-001..003 **CLOSED**.
+
+| ID | Sev | Classification | What changed |
+|---|---|---|---|
+| P3-COD-004 | P2 | **ACCEPTED** | The `TopicAlreadyExists` recovery refetched metadata once and indexed it blindly, so the same lag that caused the race could surface as a `KeyNotFoundException`. It now waits, within the 30 s admin timeout, for the topic to be visible without error, then verifies it; past the timeout it throws `TopicBootstrapException`. Tested by two bootstraps racing over the same new topics, five rounds: each topic is created by exactly one run and verified by the other. The test fails with the recovery disabled (checked). |
+
+Codex also noted that sharing one broker makes the fixed shared topics rely on per-test key and
+group filtering; it found no test whose isolation is weakened. Full suite after the fix: 83 / 114
+(3 long-load skips) / 77, no failure.

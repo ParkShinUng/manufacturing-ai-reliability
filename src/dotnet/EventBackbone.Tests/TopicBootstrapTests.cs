@@ -139,4 +139,29 @@ public sealed class TopicBootstrapTests : IClassFixture<KafkaBroker>
         var metadata = admin.GetMetadata(TimeSpan.FromSeconds(30));
         Assert.DoesNotContain(metadata.Topics, t => t.Topic == never && t.Error.Code == ErrorCode.NoError);
     }
+
+    [Fact]
+    public async Task TwoBootstrapsRacingOverTheSameNewTopicsBothSucceed_AndOnlyOneCreatesEach()
+    {
+        // Two gateways starting together: each may see the topics missing, one creation wins and the
+        // other gets TopicAlreadyExists. The loser must verify the topics, not fail or claim them
+        // (CLD-P3-001, P3-COD-004). Repeated because one round may not race.
+        using var admin = _broker.Admin();
+        for (var round = 0; round < 5; round++)
+        {
+            var specs = Enumerable.Range(0, 3)
+                .Select(i => new TopicSpec($"bootstrap.race.{round}.{i}.{Guid.NewGuid():N}.v1", 2, CleanupPolicy.Delete, TimeSpan.FromHours(1)))
+                .ToList();
+
+            var runs = await Task.WhenAll(
+                Task.Run(() => new TopicBootstrap(admin).RunAsync(specs)),
+                Task.Run(() => new TopicBootstrap(admin).RunAsync(specs)));
+
+            foreach (var spec in specs)
+            {
+                Assert.Equal(1, runs.Count(r => r.Created.Contains(spec.Name)));
+                Assert.Equal(1, runs.Count(r => r.Unchanged.Contains(spec.Name)));
+            }
+        }
+    }
 }

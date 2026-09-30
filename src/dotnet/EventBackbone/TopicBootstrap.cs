@@ -76,11 +76,10 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
                 // the topic must be verified like any other existing one, so it is. Anything other
                 // than that error is a real failure and propagates.
                 var raced = ex.Results.Where(r => r.Error.Code == ErrorCode.TopicAlreadyExists).Select(r => r.Topic).ToHashSet();
-                var fresh = admin.GetMetadata(AdminTimeout).Topics.ToDictionary(t => t.Topic);
 
                 foreach (var spec in register.Where(s => raced.Contains(s.Name)))
                 {
-                    var topic = fresh[spec.Name];
+                    var topic = await VisibleAsync(spec.Name, cancellationToken);
                     await VerifyAsync(spec, topic.Partitions.Count, topic.Partitions.Select(p => p.Replicas.Length).ToArray(), cancellationToken);
                     created.Remove(spec.Name);
                     unchanged.Add(spec.Name);
@@ -89,6 +88,33 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
         }
 
         return new BootstrapResult(created, unchanged);
+    }
+
+    /// <summary>
+    /// Waits, within the admin timeout, for a topic the broker says exists to show up in metadata
+    /// without error. The same lag that caused the race can hide it from one immediate refetch
+    /// (<c>P3-COD-004</c>); past the timeout it is a failure, not a guess.
+    /// </summary>
+    private async Task<TopicMetadata> VisibleAsync(string name, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + AdminTimeout;
+        while (true)
+        {
+            var topic = admin.GetMetadata(name, AdminTimeout).Topics.SingleOrDefault(t => t.Topic == name);
+            if (topic is { Error.Code: ErrorCode.NoError } && topic.Partitions.Count > 0)
+            {
+                return topic;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new TopicBootstrapException(
+                    $"{name} already exists according to the broker, but its metadata did not become " +
+                    $"visible within {AdminTimeout.TotalSeconds:0} s ({topic?.Error.Code.ToString() ?? "absent"}), so it could not be verified.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+        }
     }
 
     /// <summary>Describes what is there and fails on any difference. Nothing here mutates.</summary>
