@@ -141,6 +141,13 @@ commit · DLQ and redrive · lag and record-age metrics · replay on projector g
 the read-model rebuild is Phase 4 (OD-007).
 
 ## Phase 4 — Operational Data + Operations API
+
+> **Requested by the product owner 2026-09-30. Definition-of-Ready check, 2026-09-30 — NOT READY.**
+> Codex challenged it read-only (`reviews/phase-4/CODEX_DOR_CHALLENGE_raw.md`): ten items, three P0.
+> AC-006 and AC-029 claim a chain and audit records whose producers are Phases 5–7; "byte-identical"
+> rebuild is undefined; the 1 s aggregate has no contract; no ADR selects the dependencies; auth for
+> the first HTTP hop is not named. No Phase 4 code until each is resolved. The heading stays
+> un-started until the Phase 4 test specifications exist, so `ac_traceability.mjs` holds.
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.
 **Proof:** AC-006, AC-028, AC-029, AC-030, **AC-046** (read models rebuild byte-identically from a

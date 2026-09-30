@@ -76,7 +76,8 @@ All conditions are satisfied (see below). Phase 1 is authorized; implementation 
 | **Phase 1** | **Complete** |
 | **Phase 2** | **Complete** — requested 2026-09-16, completed 2026-09-22 |
 | **Phase 3** | **Complete** — requested 2026-09-28, completed 2026-09-30 |
-| **Implementation** | Phases 1, 2 and 3 complete. **Phase 4 and later not requested.** |
+| **Phase 4** | **Requested 2026-09-30** — Definition-of-Ready NOT READY; no code until resolved |
+| **Implementation** | Phases 1, 2 and 3 complete. **Phase 5 and later not requested.** |
 
 ### Authorized is not the same as started
 
@@ -95,8 +96,10 @@ check, because both require the Edge Gateway and neither can be evaluated by the
 an ADR selecting the OT protocol libraries challenged by Codex, was met the same day (`ADR-0020`).
 **Phase 3 was requested by the product owner on 2026-09-28**, after its Definition-of-Ready check
 closed `OD-007`, `OD-008` and `OD-009` and `ADR-0021` was accepted, and completed on 2026-09-30
-(AC-026, AC-027, AC-045; Codex verification in `reviews/phase-3/`). Phase 4 and everything after it
-remain unrequested, and this paragraph applies to each of them individually.
+(AC-026, AC-027, AC-045; Codex verification in `reviews/phase-3/`). **Phase 4 was requested by the
+product owner on 2026-09-30**; its Definition-of-Ready check is NOT READY, so no Phase 4 code is
+written until its blocking items are resolved. Phase 5 and everything after it remain unrequested,
+and this paragraph applies to each of them individually.
 
 ### What remains true regardless of this approval
 
