@@ -109,7 +109,11 @@
         }
       }
     },
-    "correlationId": { "type": "string", "format": "uuid" },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Minted by the prediction: the correlation chain starts here (OD-013). Not any telemetry record's correlation ID - a window holds about 600 of them."
+    },
     "causationId": {
       "type": "string",
       "format": "uuid",

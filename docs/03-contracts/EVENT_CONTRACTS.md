@@ -30,15 +30,21 @@ services without knowing which service emitted each link (NFR-002).
 ## 2. Causation chain
 
 ```text
-telemetry (causationId = null, originates the chain)
-   -> featureWindow.windowId
-        -> prediction (causationId = windowId)
-             -> safety-decision (causationId = predictionId)
-                  -> control-outcome (causationId = decisionId)
+prediction (correlationId minted here; causationId = featureWindow.windowId)
+   -> safety-decision (causationId = predictionId)
+        -> control-outcome (causationId = decisionId)
+
+telemetry (correlationId per record; causationId = null) — referenced by the window, not in the chain
 ```
 
-`correlationId` is constant across the whole chain; `causationId` names the immediate parent. This is
-what makes AC-006 a single indexed query rather than a reconstruction.
+`correlationId` is constant from the prediction onwards; `causationId` names the immediate parent.
+This is what makes the trace a single indexed query rather than a reconstruction.
+
+**The chain starts at the prediction (OD-013, 2026-09-30).** A prediction derives from a 60 s window
+of about 600 telemetry records, each with its own correlation ID, so no single ID can run from
+telemetry through it. The link back is the window reference (`featureWindow.windowId`, `startUtc`,
+`endUtc`), and the trace returns that window's per-second readings from the operational store. Raw
+telemetry keeps its per-record correlation ID and is not stored in PostgreSQL (baseline #6).
 
 ## 3. Topic summary
 
@@ -270,5 +276,7 @@ recorded here so the exception can never be claimed retroactively:
 |---|---|---|---|
 | 2026-09-28 | `equipment-state.schema.json` | `gatewayEpoch` added as **required** (OD-008) | `factory.equipment-states.v1` is produced in Phase 3, which has not started. Nothing has emitted or consumed one |
 | 2026-09-29 | `equipment-state.schema.json` | `aiEligible` made **required**; `transitionId` widened to T1–T16 (OD-010) | Phase 3 has started, but the equipment-state producer has not been written: still no record has been emitted or consumed |
+| 2026-09-30 | `control-outcome.schema.json` | `fromMode` added, **required when `modeTransitionId` is set**; `modeTransitionId` narrowed from M1–M12 to M1–M10 (OD-019) | the producer is the Control Service, Phase 7: nothing has emitted or consumed one |
+| 2026-09-30 | `prediction.schema.json` | `correlationId` is **minted by the prediction** — the chain starts here, not at telemetry (OD-013) | the producer is Phase 5: nothing has emitted or consumed one |
 
 Once a schema's first producer ships, this table closes for it and the rules above are the only path.

@@ -149,15 +149,15 @@ the read-model rebuild is Phase 4 (OD-007).
 > the first HTTP hop is not named. No Phase 4 code until each is resolved. The heading stays
 > un-started until the Phase 4 test specifications exist, so `ac_traceability.mjs` holds.
 >
-> **OPEN DECISION — `OD-011` to `OD-018`** (`OPEN_DECISIONS.md`), written 2026-09-30: the proof split
-> (011), what the API says when it does not know (012), the trace's telemetry link (013), the
-> meaning of "byte-identical" and a rebuild that would delete audit history (014), the 1 s aggregate
-> (015), the Control Service's tables (016), the first hop's JWT (017), and the numbers (018).
-> `P4-DOR-009` (dependency ADRs) and `P4-DOR-010` (test specifications) follow the decisions.
+> **`OD-011` to `OD-019` resolved 2026-09-30** (`OPEN_DECISIONS.md`) after Codex's challenge
+> (`reviews/phase-4/CODEX_OD_CHALLENGE_raw.md`, every one `SOUND_WITH_CONDITIONS`, conditions
+> applied). The product owner chose `OD-015` B — latest reading per second, no statistics — over
+> the recommended A. Remaining before Phase 4 starts: the dependency ADRs (`P4-DOR-009`, including
+> the JWT decision `OD-017` requires) and the test specifications (`P4-DOR-010`).
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.
-**Proof:** AC-006, AC-028, AC-029, AC-030, **AC-046** (read models rebuild byte-identically from a
-replay, OD-007).
+**Proof:** **AC-047** (trace store-and-query, OD-011), AC-028, AC-029, AC-030, **AC-046** (read
+models rebuild byte-identically from a replay, OD-007). `AC-006` — the live chain — is Phase 7.
 
 ## Phase 5 — AI Training + Inference
 Reproducible dataset generation · `mair_ml_core` shared features · anomaly and failure/RUL
@@ -175,7 +175,8 @@ heartbeat · `seekToEnd` restart semantics · fallback requests.
 Sole application equipment writer · mTLS identity and `authenticatedSource` · `controlEpoch`
 fencing and lease issuance · expiry, supersession, bounds, rate budget, durable idempotency ·
 **fallback watchdog** · control mode ownership and persistence.
-**Proof:** AC-004, AC-007, AC-011, AC-012, AC-013, AC-014, AC-038, **AC-039**, AC-040.
+**Proof:** AC-004, AC-007, AC-011, AC-012, AC-013, AC-014, AC-038, **AC-039**, AC-040, **AC-006**
+(the live correlation chain, moved from Phase 4 by OD-011).
 *`AC-039` added 2026-09-18: it verifies FR-030 and FR-035, both P0, and had been assigned to no
 phase at all — found by the AC traceability check.*
 **This phase closes the reliability claim.** Until it ships, ADR-0011 is documented but unproven.

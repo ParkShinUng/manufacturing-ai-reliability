@@ -24,7 +24,7 @@ for any hop, which is what allowed the self-asserted `source` field to pass for 
 | Hop | Production-like | Local/demo | Authorization |
 |---|---|---|---|
 | Safety Supervisor → Control Service (gRPC) | **mTLS**, SPIFFE-style workload identity | compose-private network + per-service token mounted only into the Supervisor | identity → permitted command types → permitted equipment scope |
-| Dashboard → Operations API | session cookie / JWT with role claims | same | `viewer` (read) / `operator` (read + `STOP_REQUIRED` reset + demo faults) |
+| Dashboard → Operations API | bearer JWT, **ES256**, verifier holds public keys only (OD-017) | same validation; tokens minted by a repository script from an uncommitted local key | `viewer` (read) / `operator` (read + `STOP_REQUIRED` reset + demo faults) |
 | Operations API → simulator admin | mTLS, demo profile only | private network, demo profile only | endpoint **absent** from the production-like build |
 | Gateway → equipment (OPC UA) | `Basic256Sha256`, `SignAndEncrypt` | `None` | **read-only session, enforced by the server** |
 | Gateway → equipment (Modbus TCP) | **none — the protocol has no identity** | `None` | **read-only listener `5020`**: every write function code is refused with exception `0x01`. Structural, not credential-based (OD-003) |

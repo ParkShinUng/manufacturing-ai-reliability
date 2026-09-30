@@ -17,6 +17,7 @@
   "appliedTargetPct": 60.0,
   "wasClamped": false,
   "resultingMode": "SAFE_FALLBACK",
+  "fromMode": "AI_ASSISTED",
   "modeTransitionId": "M4",
   "operatorId": null,
   "autonomous": true,

@@ -7,7 +7,7 @@ The following baseline choices are now normative unless changed through the docu
 3. **Telemetry cadence**: raw telemetry every 100 ms per equipment.
 4. **Feature/inference cadence**: maintain a 60-second feature window, produce 1-second aggregate features, run inference every 5 seconds per equipment.
 5. **OOD baseline**: training-distribution z-score envelope + hard feature validity/range checks. More advanced OOD methods require evidence and an ADR.
-6. **Operational persistence**: PostgreSQL stores 1-second aggregates, predictions, safety decisions, command results, fault-injection history, and model-deployment metadata. Raw 100 ms telemetry is not duplicated into PostgreSQL in baseline; Kafka provides short-term replay retention.
+6. **Operational persistence**: PostgreSQL stores the latest reading per equipment per second (amended 2026-09-30 by OD-015 — 1 s aggregate *features* are Phase 5's alone), predictions, safety decisions, command results, fault-injection history, and model-deployment metadata. Raw 100 ms telemetry is not duplicated into PostgreSQL in baseline; Kafka provides short-term replay retention.
 7. **Kafka local topology**: one KRaft broker for local development. Multi-broker HA is not a baseline claim; it may be added only for a documented HA experiment.
 8. **Model rollout**: candidate models first run in shadow mode on the same telemetry with a separate consumer group/topic. If approved, AI authority can be canaried by an explicit simulator-equipment cohort. Candidate output never gains control authority by network percentage alone.
 9. **Command transport**: Safety Supervisor → Control Service uses gRPC, not Kafka. Kafka receives audit/outcome events but is not a synchronous dependency of command execution.
@@ -696,7 +696,7 @@ because the topic has no producer yet.
 
 ---
 
-# OD-011 — OPEN — Phase 4 is asked to prove a chain and an audit trail whose producers are Phases 5–7
+# OD-011 — RESOLVED 2026-09-30 — option A — Phase 4 is asked to prove a chain and an audit trail whose producers are Phases 5–7
 
 > Raised 2026-09-30 by the Phase 4 Definition-of-Ready check (`reviews/phase-4/`, `P4-DOR-001`,
 > `P4-DOR-002`, both P0). Product owner's decision: it changes what a phase may close on. Same class
@@ -733,9 +733,20 @@ phase that *can* prove it, and a whole claim keeps one owner. B is defensible an
 speculative code; it is the better choice if the product owner weighs "no code before its producer"
 over "one projector, built once".
 
+## Decision — A, with Codex's conditions (2026-09-30)
+
+Codex: `SOUND_WITH_CONDITIONS` (`reviews/phase-4/CODEX_OD_CHALLENGE_raw.md`). Applied:
+
+1. **New criterion `AC-047`** (Phase 4): the projector stores schema-valid prediction, decision and
+   outcome records from the real topics, and the trace route returns the chain in one query. It is
+   worded so it cannot be read as proof that producers link up.
+2. **`AC-006` keeps the live-chain claim and moves to Phase 7**, the first phase with every producer.
+3. **`AC-029` stays in Phase 4**, with its scope stated: storage, retention and query of schema-valid
+   records, not the existence of their producers. Its mode-transition part depends on `OD-019`.
+
 ---
 
-# OD-012 — OPEN — the Operations API contract requires values no component can supply yet, or ever reliably
+# OD-012 — RESOLVED 2026-09-30 — option A — the Operations API contract requires values no component can supply yet, or ever reliably
 
 > Raised 2026-09-30 while reading `contracts/openapi/operations-api-v1.yaml` for the Phase 4 DoR check.
 > `P4-DOR-008` found one instance (`CorrelationTrace`); there are more, and the pattern outlives
@@ -769,9 +780,19 @@ measurements — or to fail validation, which breaks `AC-030`.
 exists (the `EVENT_CONTRACTS.md` §5 pre-producer rule, applied to the OpenAPI file). B's leakage risk
 is the kind this repository treats as a safety concern.
 
+## Decision — A, with Codex's conditions (2026-09-30)
+
+1. The fields become **nullable, keys stay required**, so a response's shape never changes:
+   `EquipmentSummary.controlMode`, `EquipmentDetail.controlEpoch`, `PlatformHealth.inferenceAvailable`,
+   `supervisorHealthy`, `controlServiceHealthy`, `CorrelationTrace.decision`, `CorrelationTrace.command`.
+2. Each states the same meaning in the contract: **`null` = no record observed**. It never means
+   "not implemented".
+3. Examples and tests for an equipment with no control outcome and a trace with no command are part
+   of the Phase 4 test specifications (`P4-DOR-010`).
+
 ---
 
-# OD-013 — OPEN — the trace's telemetry link cannot be joined as the contract describes it
+# OD-013 — RESOLVED 2026-09-30 — option A — the trace's telemetry link cannot be joined as the contract describes it
 
 > Raised 2026-09-30 while reading the causation chain for the Phase 4 DoR check. Not in Codex's
 > list; it sits under `AC-006`.
@@ -803,9 +824,16 @@ can reach, and the join the contract implies does not exist.
 **Recommendation: A.** It states what the chain can actually be, and matches how the prediction is
 already defined (`causationId` = `windowId`).
 
+## Decision — A, with Codex's conditions (2026-09-30)
+
+1. `EVENT_CONTRACTS.md` §2 and the prediction schema say the chain **starts at the prediction**.
+2. `CorrelationTrace.telemetry[]` is replaced by `window`: the prediction's feature-window reference
+   and that window's **per-second readings** (`OD-015`, option B) from the operational store.
+3. A telemetry record keeps its own per-record correlation ID; it is not part of the chain.
+
 ---
 
-# OD-014 — OPEN — "byte-identical" is undefined, and a full rebuild would destroy audit history
+# OD-014 — RESOLVED 2026-09-30 — option A — "byte-identical" is undefined, and a full rebuild would destroy audit history
 
 > Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-003`, P0), with a second defect found while
 > checking retention.
@@ -843,9 +871,19 @@ copy, so those rows are not rebuildable; they are authoritative history.
 **Recommendation: A.** It defines the comparison on what the AC is about — the read model's
 content — and removes a destructive operation instead of documenting it.
 
+## Decision — A, with Codex's conditions (2026-09-30)
+
+1. **Canonical dump** specified in `OPERATIONAL_DATA.md` §9a: column order, row order, text form
+   per type. Projection tables have no non-deterministic column.
+2. **Provenance** (`source_topic`, `source_partition`, `source_offset`) is stored on every projected
+   row, so a rebuild can replace exactly the rows of the range it replays.
+3. §7 reads **"rebuildable within topic retention"**, `equipment_state_history` is **not**
+   rebuildable (its topic is compacted), and **no rebuild truncates a table**. Past retention a row
+   is the only copy; audit tables are backed up like `control_state`.
+
 ---
 
-# OD-015 — OPEN — the 1 s aggregate has a bucket rule and nothing else
+# OD-015 — RESOLVED 2026-09-30 — option B — the 1 s aggregate has a bucket rule and nothing else
 
 > Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-004`, P1).
 
@@ -873,9 +911,23 @@ is how the dashboard and the model come to disagree about the same second.
 **Recommendation: A.** B is honest and cheap if the dashboard never needs more than "latest"; the
 product owner should pick B if that is the case, since it removes the late-record question entirely.
 
+## Decision — B, by the product owner (2026-09-30)
+
+The product owner chose **B** over the recommended A: the dashboard needs the latest reading, and
+B removes the late-record and open-bucket questions (Codex's conditions on A) entirely.
+
+- `telemetry_aggregate_1s` becomes **`telemetry_reading_1s`**: the latest reading per equipment per
+  second, keyed `(equipment_id, second_utc)`, `second_utc` = `eventTimeUtc` truncated to the second.
+- The stored reading is the one with the greatest `(eventTimeUtc, sequence)`; an upsert replaces it
+  only with a greater one. The result depends on which records exist, not on their order, so a
+  replay is deterministic and nothing is held in memory across a restart.
+- No statistics are computed in the operational store. 1 s aggregate **features** belong to Phase 5's
+  feature builder alone, so there is one implementation, not two.
+- Baseline #6 is amended to say so.
+
 ---
 
-# OD-016 — OPEN — who creates the Control Service's tables
+# OD-016 — RESOLVED 2026-09-30 — option A — who creates the Control Service's tables
 
 > Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-005`, P1).
 
@@ -896,9 +948,15 @@ write, before their writer exists.
 
 **Recommendation: A.**
 
+## Decision — A, with Codex's conditions (2026-09-30)
+
+1. `OPERATIONAL_DATA.md` §6 and §9: migrations are **per owner, per PostgreSQL schema**.
+2. Phase 4 creates the **`operations`** schema only.
+3. The **`control`** schema and its migrations belong to control-service, in Phase 7.
+
 ---
 
-# OD-017 — OPEN — the first HTTP hop names "JWT" and nothing that issues or verifies one
+# OD-017 — RESOLVED 2026-09-30 — option A — the first HTTP hop names "JWT" and nothing that issues or verifies one
 
 > Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-006`, P1).
 
@@ -920,9 +978,19 @@ The rest of the system authenticates by mTLS (`ADR-0016`), so there is no preced
 **Recommendation: A.** It names every value, keeps minting out of the verifier, and leaves C
 possible later without changing what the API checks.
 
+## Decision — A, with Codex's conditions (2026-09-30)
+
+1. Recorded in `OPERATIONS_API.md` §16 and `SECURITY_BOUNDARIES.md`: ES256; `iss`
+   `mair-local-issuer` locally, the environment's issuer otherwise; `aud` `mair-operations-api`;
+   `exp` required, 60 s skew; roles in `roles`; `sub` is the rate-limit subject; public keys from
+   configured key files.
+2. It is a trust-boundary choice, so it is recorded as an **ADR** before any code, with the other
+   Phase 4 dependency ADRs (`P4-DOR-009`).
+3. No build or image contains a private key, and no route, flag or profile skips validation.
+
 ---
 
-# OD-018 — OPEN — the numbers Phase 4 would otherwise invent
+# OD-018 — RESOLVED 2026-09-30 — option the table — the numbers Phase 4 would otherwise invent
 
 > Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-007`, P1). One decision because each value is
 > small and they interact through staleness.
@@ -937,9 +1005,16 @@ possible later without changing what the API checks.
 
 The product owner may accept the table as a whole or change individual values.
 
+## Decision — the table, with Codex's conditions (2026-09-30)
+
+1. **Caught up**: for every partition of every topic a projector consumes, records through the high
+   watermark observed at a poll are written to PostgreSQL **and** their offsets committed.
+2. `X-Data-Staleness-Seconds` is the **maximum** across the projectors backing the route.
+3. The header is on **every projection-backed response**, not only equipment summary and detail.
+
 ---
 
-# OD-019 — OPEN — a mode transition is promised as an audited event the contract cannot carry
+# OD-019 — RESOLVED 2026-09-30 — option A — a mode transition is promised as an audited event the contract cannot carry
 
 > Raised 2026-09-30 by Codex's challenge of OD-011–018 (`reviews/phase-4/CODEX_OD_CHALLENGE_raw.md`,
 > `P4-ODC-001`, P1), confirmed against the repository. It blocks `AC-029`'s "mode transitions".
@@ -961,6 +1036,19 @@ store a mode transition the contract cannot express, and `AC-029` cannot be prov
 
 **Recommendation: A.** §8 already names `factory.control-outcomes.v1` as the destination; A makes the
 schema say what the state machine already promised.
+
+## Decision — A (2026-09-30), with a correction found while applying it
+
+Checking the schema before amending it: `modeTransitionId` **already exists** and `reasonCode`
+already carries the trigger, so of the three fields Codex named only **`fromMode`** is missing. The
+check found a second drift instead: the schema's pattern allowed **M1–M12**, and the state machine
+defines **M1–M10**.
+
+- `fromMode` added, required whenever `modeTransitionId` is set; `null` only for M1, which has no
+  prior mode.
+- `modeTransitionId` narrowed to **M1–M10**.
+- `CONTROL_MODE_STATE_MACHINE.md` §8 names the fields as the schema does.
+- Both are pre-producer amendments (`EVENT_CONTRACTS.md` §5): control-outcome's producer is Phase 7.
 
 ---
 

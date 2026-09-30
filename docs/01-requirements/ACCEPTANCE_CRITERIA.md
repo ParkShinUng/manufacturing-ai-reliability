@@ -67,7 +67,8 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   is non-replay-eligible **by configuration**, and a rewind attempt against it is refused rather
   than silently honoured.
 - **AC-046 → FR-011** *(new 2026-09-28, OD-007; verified in **Phase 4**)* — Replaying a known offset
-  range into **projection** consumer groups rebuilds the read models **byte-identically**.
+  range into **projection** consumer groups rebuilds the read models **byte-identically** — equal
+  canonical dumps, `OPERATIONAL_DATA.md` §9a (OD-014).
 - **AC-026 → FR-010/012** — Every topic exists with the documented partition count, replication
   factor, and retention; the bootstrap job is idempotent and **asserts partition-count immutability**.
 - **AC-027 → FR-011** *(scope stated 2026-09-28 by OD-009)* — A schema-invalid record goes to the
@@ -87,8 +88,16 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
   fallback and the Control Service remains healthy.
 - **AC-005 → FR-031/033** — Inject OOD, stale, and bad-quality telemetry and verify AI rejection
   with stable reason codes; OOD produces a **hard reject** (`OOD_HIGH`), never reduced authority.
-- **AC-006 → FR-032/NFR-002** — Given a correlation ID, retrieve the full
-  telemetry → prediction → safety-decision → command chain in a single query within 200 ms.
+- **AC-006 → FR-032/NFR-002** *(moved to **Phase 7** 2026-09-30 by OD-011; chain start amended by
+  OD-013)* — Given a correlation ID from a **live** run, retrieve the full prediction →
+  safety-decision → command chain, with the prediction's feature-window reference and that window's
+  per-second readings, in a single query within 200 ms. The claim is that the **real producers link
+  up**, so it is proven by the first phase in which all of them exist.
+- **AC-047 → FR-032/NFR-002** *(new 2026-09-30, OD-011; verified in **Phase 4**)* — Given
+  schema-valid prediction, safety-decision and control-outcome records linked by `correlationId` and
+  `causationId` on the real topics, the projector stores them and `GET /trace/{correlationId}`
+  returns the chain in a single query within 200 ms; a link with no record is `null`, never invented
+  (OD-012). This proves store-and-query, **not** that producers link up — that is AC-006.
 - **AC-007 → FR-034** — Deliver the same command twice with an identical idempotency key; the
   equipment state changes **at most once**.
 - **AC-011 → NFR-001/FR-033 [ADR-0011]** — **Kill the Safety Supervisor.** Within 12 s the Control
@@ -133,9 +142,14 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
 
 - **AC-009 → FR-050/051** — Dashboard displays equipment, AI/control, and platform-health state from
   live APIs, not static mocks, **including the active rejection or fallback reason**.
-- **AC-028 → NFR-004** — A projection rebuilt from Kafka is byte-equivalent to the original.
+- **AC-028 → NFR-004** *(defined 2026-09-30 by OD-014)* — A projection rebuilt from Kafka over a
+  replayed range is **byte-identical in its canonical dump** (`OPERATIONAL_DATA.md` §9a) to the
+  original, within the topic's retention.
 - **AC-029 → FR-032** — Audit records (decisions, outcomes, mode transitions) are retained for the
-  documented period and are queryable by equipment and time range.
+  documented period and are queryable by equipment and time range. *(Scope stated 2026-09-30 by
+  OD-011: proven in Phase 4 on schema-valid records through the real topics — a claim about storage,
+  retention and query, not about which producer wrote them. Mode transitions carry `fromMode`,
+  OD-019.)*
 - **AC-030 → FR-050/051** — Every Operations API response validates against the OpenAPI contract,
   including error responses.
 - **AC-031 → FR-052/NFR-006** — Demo fault-injection endpoints return 403 outside the demo profile

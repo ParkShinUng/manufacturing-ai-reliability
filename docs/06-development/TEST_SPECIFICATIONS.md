@@ -164,8 +164,10 @@ the applied rate does not move · any late command carrying a pre-replay epoch i
 
 ### PROJ-001 — read models rebuild from a replay → AC-046 *(Phase 4)*
 **Trigger:** replay a known offset range into the projection consumer groups.
-**Assert:** every read model is **byte-identical** to its pre-replay content · the rebuild is
-idempotent under a second replay of the same range · no projection writes outside its own tables.
+**Assert:** every read model's **canonical dump** (`OPERATIONAL_DATA.md` §9a) is byte-identical to
+its pre-replay dump · only rows whose provenance lies in the replayed range are replaced, and rows
+outside it are untouched (OD-014) · the rebuild is idempotent under a second replay of the same
+range · no projection writes outside its own tables.
 
 ### FAIL-MODEL-001 — quarantine propagation → AC-033 *(new)*
 **Trigger:** quarantine the running model in MLflow.
@@ -513,10 +515,10 @@ becoming a permanent excuse:
 
 | AC | Phase |
 |---|---|
-| AC-006, AC-028, AC-029, AC-030 | 4 |
+| AC-028, AC-029, AC-030, AC-047 | 4 |
 | AC-008, AC-024, AC-025, AC-032 | 5 |
 | AC-016, AC-017 | 6 |
-| AC-014, AC-038, AC-039, AC-040 | 7 |
+| AC-006, AC-014, AC-038, AC-039, AC-040 | 7 |
 | AC-035, AC-036, AC-041, AC-044 | 8 |
 | AC-043 | 10 |
 | AC-009, AC-031, AC-037 | 11 |

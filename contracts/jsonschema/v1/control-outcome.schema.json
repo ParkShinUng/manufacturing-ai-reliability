@@ -21,6 +21,15 @@
     "resultingMode",
     "correlationId"
   ],
+  "allOf": [
+    {
+      "if": {
+        "required": ["modeTransitionId"],
+        "properties": { "modeTransitionId": { "type": "string" } }
+      },
+      "then": { "required": ["fromMode"] }
+    }
+  ],
   "properties": {
     "eventId": {
       "type": "string",
@@ -129,15 +138,26 @@
         "AI_ASSISTED",
         "SAFE_FALLBACK",
         "STOP_REQUIRED"
-      ]
+      ],
+      "description": "The mode after this outcome - the toMode of a mode transition."
+    },
+    "fromMode": {
+      "enum": [
+        "NORMAL_RULE",
+        "AI_ASSISTED",
+        "SAFE_FALLBACK",
+        "STOP_REQUIRED",
+        null
+      ],
+      "description": "The mode before a mode transition. Required when modeTransitionId is set (OD-019); null only for M1, which has no prior mode."
     },
     "modeTransitionId": {
       "type": [
         "string",
         "null"
       ],
-      "pattern": "^M(1[0-2]|[1-9])$",
-      "description": "M1..M12 from CONTROL_MODE_STATE_MACHINE.md when this outcome carried a mode change."
+      "pattern": "^M(10|[1-9])$",
+      "description": "M1..M10 from CONTROL_MODE_STATE_MACHINE.md when this outcome carried a mode change; reasonCode is its trigger."
     },
     "operatorId": {
       "type": [

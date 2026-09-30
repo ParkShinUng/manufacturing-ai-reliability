@@ -7,7 +7,7 @@ Durable operational store for aggregates, predictions, decisions, outcomes, mode
 model deployments. Serves the Operations API; **is not in the command path**.
 
 ## 2. Responsibilities
-Persist 1 s aggregates, predictions, safety decisions, control outcomes, mode transitions, fault
+Persist the latest reading per equipment per second (OD-015), predictions, safety decisions, control outcomes, mode transitions, fault
 injections, model deployments; back Control Service durable state; support correlation-ID trace
 retrieval (AC-006).
 
@@ -24,37 +24,66 @@ watchdog (F12, `CONTROL_SERVICE.md` §12).
 In: projections from Kafka; direct writes from Control Service. Out: Operations API queries.
 
 ## 6. Contracts
-Schema migrations in `src/dotnet/OperationsService/Migrations`; the JSON schemas define field
+Migrations are **per owner, per PostgreSQL schema** (OD-016): the `operations` schema is migrated by
+operations-service (`src/dotnet/OperationsService/Migrations`), the `control` schema by
+control-service in Phase 7. Phase 4 creates `operations` only. The JSON schemas define field
 semantics and the tables must not diverge from them.
 
 ## 7. Data ownership
-| Table | Owner | Rebuildable from Kafka? |
+| Table | Schema · owner | Rebuildable from Kafka? (OD-014) |
 |---|---|---|
-| `telemetry_aggregate_1s` | operations-projector | **yes** |
-| `prediction` | operations-projector | yes |
-| `safety_decision` | operations-projector | yes |
-| `control_outcome` | operations-projector | yes |
-| `equipment_state_history` | operations-projector | yes |
-| `fault_injection` | operations-projector | yes |
-| `model_deployment` | operations-projector | yes |
-| **`control_state`** | **control-service** | **NO — authoritative** |
-| **`command_idempotency`** | **control-service** | **NO — authoritative** |
+| `telemetry_reading_1s` | `operations` · operations-projector | within **6 h** |
+| `prediction` | `operations` · operations-projector | within 24 h |
+| `safety_decision` | `operations` · operations-projector | within 7 d |
+| `control_outcome` | `operations` · operations-projector | within 7 d |
+| `equipment_state_history` | `operations` · operations-projector | **no** — the topic is compacted; only each equipment's latest state is replayable |
+| `fault_injection` | `operations` · operations-projector | within 7 d |
+| `model_deployment` | `operations` · operations-projector | latest per model only (compacted) |
+| **`control_state`** | **`control` · control-service** | **NO — authoritative** |
+| **`command_idempotency`** | **`control` · control-service** | **NO — authoritative** |
+
+Past its topic's retention a projection row is the **only copy**. The audit tables —
+`safety_decision`, `control_outcome`, `equipment_state_history` — are therefore backed up like
+`control_state`, and nothing truncates them (OD-014).
 
 The last two rows are the ones that matter operationally: everything else can be dropped and
 rebuilt, but Control Service state is original and must be backed up.
 
 ## 8. State model
-Time-series tables partitioned monthly by `occurred_at_utc`; indexed on
+Time-series tables partitioned by `occurred_at_utc` — **daily** for `telemetry_reading_1s` and
+`prediction`, monthly for the rest; a partition is dropped when its upper bound is older than the
+table's retention (OD-018); indexed on
 `(equipment_id, occurred_at_utc)` and on `correlation_id` (the index that makes AC-006 a single query
 rather than a scan).
 
 ## 9. Lifecycle
-Migrations applied at deploy by a single owner service; projector rebuild = truncate projection
-tables and replay from Kafka. `control_state` is **never** truncated by a rebuild.
+Each schema's migrations are applied at deploy by its owner (OD-016). A rebuild is a **range
+operation** (OD-014): rewind the projector group over an offset range and replace only the rows
+whose provenance (`source_topic`, `source_partition`, `source_offset`) lies in that range. **No
+rebuild truncates a table**; `control_state` and every row outside the range are untouched.
+
+## 9a. Canonical dump — what "byte-identical" means
+
+AC-028 and AC-046 compare a **canonical export**, not storage (OD-014). Per table: every column in
+declaration order; rows ordered by primary key; `timestamptz` as UTC ISO-8601 with millisecond
+precision and `Z`; numerics as their shortest round-trip decimal text; booleans `true`/`false`;
+`NULL` as `\N`; tab-separated, one row per line, UTF-8. Two projections are identical when their
+dumps are equal byte for byte.
+
+That only holds if a projection table has **no non-deterministic column**: its primary key comes
+from the topic's duplicate identity (`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §7), every time from the
+event, and there is no sequence, no `now()` default and no insertion timestamp. Provenance columns
+are deterministic — a replay reads the same offsets.
 
 ## 10. Normal flow
 Projector consumes → upserts idempotently by the topic's duplicate identity → commits offset.
 Idempotent upsert is what makes at-least-once delivery harmless here.
+
+`telemetry_reading_1s` (OD-015): key `(equipment_id, second_utc)`, `second_utc` = `eventTimeUtc`
+truncated to the second. The stored reading is the one with the greatest `(eventTimeUtc, sequence)`,
+and an upsert replaces it only with a greater one, so the result depends on which records exist and
+not on their order: a replay is deterministic, a late record is simply applied, and nothing is held
+in memory across a restart. No statistics are computed here; 1 s aggregate features are Phase 5's.
 
 ## 11. Failure behaviour
 | Failure | Behaviour |
@@ -74,23 +103,24 @@ Projector batches up to 500 records or 1 s; bounded in-flight.
 Projections resume from offsets; a full rebuild is an operator action with a documented runbook.
 
 ## 15. Configuration
-Retention: aggregates 30 d, predictions 30 d, decisions/outcomes 90 d, mode history 1 y,
+Retention: per-second readings 30 d, predictions 30 d, decisions/outcomes 90 d, mode history 1 y,
 `control_state` indefinite.
 
 ## 16. Security
 Least-privilege roles: projector write-only to projection tables; API read-only; control-service
-read/write only to its two tables. No shared superuser at runtime.
+read/write only to its two tables. Roles follow the schema boundary (OD-016). No shared superuser
+at runtime.
 
 ## 17. Observability
 `projection_lag_seconds`, `db_query_latency_seconds`, `db_errors_total`, `table_rows`,
 `retention_deleted_rows_total`.
 
 ## 18. Performance targets (TARGET — unmeasured)
-1 s aggregate write ≥ 250 rows/s; correlation trace query P95 ≤ 200 ms; equipment summary P95 ≤ 100 ms.
+per-second reading write ≥ 250 rows/s; correlation trace query P95 ≤ 200 ms; equipment summary P95 ≤ 100 ms.
 
 ## 19. Test strategy
 Migration up/down; idempotent upsert under duplicate delivery; rebuild-from-Kafka equivalence
-(a rebuilt projection must be byte-equivalent); retention correctness; AC-006 trace query.
+(equal canonical dumps, §9a); retention correctness; AC-047 trace query.
 
 ## 20. Acceptance criteria
-AC-006, AC-028, AC-029.
+AC-047, AC-028, AC-029, AC-046; AC-006 in Phase 7 (OD-011).

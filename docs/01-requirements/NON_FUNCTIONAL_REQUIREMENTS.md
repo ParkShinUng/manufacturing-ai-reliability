@@ -53,7 +53,7 @@
 | T-02 | Predictions | 4/s (20 eq ÷ 5 s) | 50/s |
 | T-03 | Safety decisions | 4/s | 50/s |
 | T-04 | Commands | ≤ 4/s | ≤ 50/s |
-| T-05 | 1 s aggregate writes | 20 rows/s | 250 rows/s |
+| T-05 | per-second reading writes (OD-015) | 20 rows/s | 250 rows/s |
 
 ### 2.2 Latency
 

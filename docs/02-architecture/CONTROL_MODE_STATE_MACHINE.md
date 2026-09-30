@@ -149,8 +149,12 @@ authority costs at most 30 s and removes an entire class of restart races.
 
 Each transition emits to `factory.control-outcomes.v1` and the audit store:
 
-`equipmentId, fromMode, toMode, transitionId (M1..M10), triggerReasonCode, controlEpoch,
+`equipmentId, fromMode, resultingMode, modeTransitionId (M1..M10), reasonCode, controlEpoch,
 authenticatedSource, decisionId?, occurredAtUtc, operatorId?, correlationId`
+
+The names are `control-outcome.schema.json`'s (OD-019): `resultingMode` is the target mode and
+`reasonCode` the trigger. `fromMode` is required whenever `modeTransitionId` is set, and `null` only
+for M1, which has no prior mode.
 
 `operatorId` is required and non-null for M7. A `STOP_REQUIRED` release with no recorded operator
 is a contract violation and must fail rather than default.
