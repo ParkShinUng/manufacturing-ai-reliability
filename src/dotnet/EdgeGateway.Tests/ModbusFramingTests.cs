@@ -118,9 +118,15 @@ public sealed class ModbusFramingTests
         return frame;
     }
 
-    private static async Task<ModbusTelemetryClient> ConnectedAsync(ScriptedServer server)
+    /// <summary>
+    /// A client with a generous response timeout, unless the test is about the timeout itself. The
+    /// production 250 ms (§2.7) is a claim about a warm gateway; a framing test run first on a cold
+    /// CI runner missed it before its scripted server answered, and failed as a timeout instead of
+    /// the framing error it was checking (CI run 36653668409).
+    /// </summary>
+    private static async Task<ModbusTelemetryClient> ConnectedAsync(ScriptedServer server, bool productionTimeout = false)
     {
-        var client = new ModbusTelemetryClient("127.0.0.1", server.Port);
+        var client = new ModbusTelemetryClient("127.0.0.1", server.Port, productionTimeout ? null : TimeSpan.FromSeconds(5));
         await client.ConnectAsync();
         return client;
     }
@@ -241,7 +247,7 @@ public sealed class ModbusFramingTests
         // roots the handler holding the server's socket, and a GC finalises the socket mid-test -
         // the client then sees a reset, not silence. It failed that way under the full suite only.
         await using var server = new ScriptedServer((_, _, _) => Task.Delay(TimeSpan.FromSeconds(10)));
-        using var client = await ConnectedAsync(server);
+        using var client = await ConnectedAsync(server, productionTimeout: true);
 
         var started = Stopwatch.GetTimestamp();
         await Assert.ThrowsAsync<TimeoutException>(() => client.ReadAsync(0));
@@ -272,7 +278,7 @@ public sealed class ModbusFramingTests
 
             await s.WriteAsync(Response(r));
         });
-        using var client = await ConnectedAsync(server);
+        using var client = await ConnectedAsync(server, productionTimeout: true);
 
         await Assert.ThrowsAsync<TimeoutException>(() => client.ReadAsync(0));
         await Task.Delay(300); // the late answer is now in flight on the old connection

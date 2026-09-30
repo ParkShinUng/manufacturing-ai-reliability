@@ -41,3 +41,9 @@
 Codex also noted that sharing one broker makes the fixed shared topics rely on per-test key and
 group filtering; it found no test whose isolation is weakened. Full suite after the fix: 83 / 114
 (3 long-load skips) / 77, no failure.
+
+## After the push — CI run 36653668409
+
+| ID | Sev | Finding |
+|---|---|---|
+| CLD-P3-004 | P2 | **A Phase 2 framing test was timing-dependent.** CI failed on `ModbusFramingTests.AMalformedResponseIsRejected_AndTheConnectionIsClosed("transaction id")`: a `TimeoutException` where a `ModbusException` was expected. It was the first theory case, 1.4 s into a cold runner, and the framing tests used the production 250 ms response timeout although they test framing, not timing — the scripted server had not answered yet. The client was right; the test was not. Framing tests now use a 5 s timeout; the two tests that are about the timeout keep the production value. Not a Phase 3 defect, and nothing in Phase 3 code changed. |
