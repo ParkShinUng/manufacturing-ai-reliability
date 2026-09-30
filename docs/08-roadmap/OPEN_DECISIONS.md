@@ -939,6 +939,31 @@ The product owner may accept the table as a whole or change individual values.
 
 ---
 
+# OD-019 — OPEN — a mode transition is promised as an audited event the contract cannot carry
+
+> Raised 2026-09-30 by Codex's challenge of OD-011–018 (`reviews/phase-4/CODEX_OD_CHALLENGE_raw.md`,
+> `P4-ODC-001`, P1), confirmed against the repository. It blocks `AC-029`'s "mode transitions".
+
+## The problem
+
+`CONTROL_MODE_STATE_MACHINE.md` §8 says every mode change emits to `factory.control-outcomes.v1`
+with `fromMode, toMode, transitionId (M1..M10), triggerReasonCode, controlEpoch, authenticatedSource,
+decisionId?, occurredAtUtc, operatorId?, correlationId`. `control-outcome.schema.json` has
+`resultingMode` and none of `fromMode`, `transitionId` or `triggerReasonCode`. A projector cannot
+store a mode transition the contract cannot express, and `AC-029` cannot be proven on it.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Add the transition fields to `control-outcome`**, present when the outcome changes the mode and absent otherwise, as a pre-producer amendment (`EVENT_CONTRACTS.md` §5; the producer is Phase 7) | one schema carries two kinds of fact, distinguished by the fields' presence |
+| **B** | A separate `factory.mode-transitions.v1` topic and schema | cleaner separation, but an eighth topic in a register Phase 3 froze and bootstrapped, and a second record for one event |
+
+**Recommendation: A.** §8 already names `factory.control-outcomes.v1` as the destination; A makes the
+schema say what the state machine already promised.
+
+---
+
 ## Found while writing OD-011–018, and fixed directly
 
 `FaultInjectionRequest.profile` in the OpenAPI contract listed ten profiles. `OD-001` added
