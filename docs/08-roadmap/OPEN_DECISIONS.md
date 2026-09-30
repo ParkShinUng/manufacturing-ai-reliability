@@ -693,3 +693,254 @@ because the topic has no producer yet.
    **not representable as one transition** — an intermediate state the observer never saw.
 3. **`aiEligible`: required.** A pre-producer amendment under `EVENT_CONTRACTS.md` §5, recorded in
    that section's table beside `gatewayEpoch`.
+
+---
+
+# OD-011 — OPEN — Phase 4 is asked to prove a chain and an audit trail whose producers are Phases 5–7
+
+> Raised 2026-09-30 by the Phase 4 Definition-of-Ready check (`reviews/phase-4/`, `P4-DOR-001`,
+> `P4-DOR-002`, both P0). Product owner's decision: it changes what a phase may close on. Same class
+> as `OD-007`.
+
+## The problem
+
+Phase 4's proof list contains **AC-006** (the telemetry → prediction → decision → command chain for a
+correlation ID, in one query, within 200 ms) and **AC-029** (audit records of decisions, outcomes
+and mode transitions, retained and queryable). Only telemetry and equipment state have producers
+today. Predictions are Phase 5, safety decisions Phase 6, control outcomes and control-mode
+transitions Phase 7.
+
+Two different claims are tangled in each criterion:
+
+- a **store-and-query** claim — given records on the topics, the projector keeps them and the API
+  returns them correctly. That is Phase 4's own behaviour, and a projector's input is the **contract**,
+  not the producer: schema-valid records on a real topic test it honestly, as Phase 3 tested the DLQ
+  component with records no production producer wrote (`OD-009`).
+- a **the-system-links-up** claim — the real producers stamp the identifiers so that the chain
+  exists at all. Only the phase that adds the last producer can prove that. Fixture records cannot:
+  they would show that the fixture is linked, not that the producers are (`P4-DOR-002`).
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Split as `OD-007` did.** Phase 4 proves store-and-query on schema-valid records through real topics, under **new** AC IDs. `AC-006` keeps the whole claim — a *live* chain from the real producers — and moves to **Phase 7**, the first phase with every producer. `AC-029` is a store-and-query claim and stays in Phase 4 | two new criteria and their specifications; the projector for predictions, decisions and outcomes is written before any producer and must be revisited if a producer disagrees with the schema |
+| **B** | Phase 4 projects only the two topics with producers; every read model and route for later topics moves to the phase that produces them | no speculative projector code, but the Operations API grows in four phases, and AC-028/046's "every read model rebuilds" is re-proven each time |
+| **C** | Keep AC-006 and AC-029 in Phase 4, proven on fixtures | cheapest; Codex's P0 — it demonstrates the fixture, not the system |
+
+**Recommendation: A.** It is the rule `AC-001` and `OD-007` set: each claim is proven by the first
+phase that *can* prove it, and a whole claim keeps one owner. B is defensible and cleaner about
+speculative code; it is the better choice if the product owner weighs "no code before its producer"
+over "one projector, built once".
+
+---
+
+# OD-012 — OPEN — the Operations API contract requires values no component can supply yet, or ever reliably
+
+> Raised 2026-09-30 while reading `contracts/openapi/operations-api-v1.yaml` for the Phase 4 DoR check.
+> `P4-DOR-008` found one instance (`CorrelationTrace`); there are more, and the pattern outlives
+> Phase 7.
+
+## The problem
+
+Fields marked **required and non-nullable**, with no source before a later phase:
+
+| Schema | Field | Source | Phase |
+|---|---|---|---|
+| `EquipmentSummary` | `controlMode` | control-service outcomes | 7 |
+| `EquipmentDetail` | `controlEpoch` | control-service | 7 |
+| `PlatformHealth` | `inferenceAvailable`, `supervisorHealthy`, `controlServiceHealthy` | prediction service, Supervisor, Control Service | 5–7 |
+| `CorrelationTrace` | `decision`, `command` | Supervisor, Control Service | 6–7 |
+
+This is not only a phase-ordering problem. After Phase 7, an equipment that has never had a control
+outcome still has no `controlMode`, and a trace whose prediction was rejected has no `command`. A
+required non-nullable field forces the API to invent a value — the thing `ADR-0018` forbids for
+measurements — or to fail validation, which breaks `AC-030`.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Nullable, with one stated meaning: "no record observed".** `null` never means "not implemented"; it means the projection holds no record for it, which is true in Phase 4 and stays true for a genuinely new equipment later. The contract states the meaning per field | the dashboard must render "unknown" everywhere, which is honest but means every consumer handles it |
+| **B** | An explicit `UNKNOWN` enum member (`controlMode`) and `status` objects (`health: {state: UNKNOWN}`) | stronger typing, but `ControlMode` is a control-plane enum shared with the proto contracts, and a value that exists only in the read API invites it leaking into the control path |
+| **C** | Serve a route only once every required field has a source | nothing invented, but `/equipment` — the main route — would not exist until Phase 7 |
+
+**Recommendation: A**, applied as a contract amendment before any producer or consumer of the API
+exists (the `EVENT_CONTRACTS.md` §5 pre-producer rule, applied to the OpenAPI file). B's leakage risk
+is the kind this repository treats as a safety concern.
+
+---
+
+# OD-013 — OPEN — the trace's telemetry link cannot be joined as the contract describes it
+
+> Raised 2026-09-30 while reading the causation chain for the Phase 4 DoR check. Not in Codex's
+> list; it sits under `AC-006`.
+
+## The problem
+
+`EVENT_CONTRACTS.md` §2 says `correlationId` is **constant across the whole chain**, starting at
+telemetry. It cannot be:
+
+1. **Every telemetry record gets its own correlation ID.** `TelemetryNormaliser.cs` assigns a new
+   one per record (`CorrelationId = _newId()`), which is correct — a telemetry record is the start
+   of nothing in particular.
+2. **A prediction derives from a 60 s window** — about 600 records per equipment, each with its own
+   correlation ID. One prediction cannot carry all of them.
+3. **Raw telemetry is not in PostgreSQL** (baseline #6) and lives **6 h** in Kafka. A "single query"
+   against the operational store cannot return raw telemetry records at all.
+
+So `CorrelationTrace.telemetry` — "an array of telemetry objects" — has no source a single query
+can reach, and the join the contract implies does not exist.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **The chain starts at the prediction.** A prediction mints the correlation ID; its `causationId` is the window ID; the trace's telemetry link is the **window reference** (`windowId`, equipment, event-time range) plus the 1 s aggregates for that range from PostgreSQL. Raw telemetry correlation IDs stay per record and are not part of the chain | the trace shows aggregates, not raw records; `EVENT_CONTRACTS.md` §2 and `CorrelationTrace` change; the prediction contract (Phase 5) is amended before its producer exists |
+| **B** | Keep raw telemetry in the trace by reading Kafka at query time | not a single query, fails after 6 h, and makes the API a Kafka consumer — `OPERATIONS_API.md` §3 excludes it |
+| **C** | Store raw telemetry in PostgreSQL | reverses baseline #6: 250 equipment × 10 Hz into a relational store, for one route |
+
+**Recommendation: A.** It states what the chain can actually be, and matches how the prediction is
+already defined (`causationId` = `windowId`).
+
+---
+
+# OD-014 — OPEN — "byte-identical" is undefined, and a full rebuild would destroy audit history
+
+> Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-003`, P0), with a second defect found while
+> checking retention.
+
+## The problem
+
+**1. No representation is named.** AC-028 says "byte-equivalent", AC-046 "byte-identical". Physical
+table bytes are meaningless in PostgreSQL (MVCC, tuple layout, free space). An ingestion timestamp,
+a sequence-generated key, a `now()` default, row order, or float text formatting would each make a
+correct rebuild differ.
+
+**2. Kafka does not hold what PostgreSQL keeps.** `OPERATIONAL_DATA.md` §9 defines a rebuild as
+*truncate the projection tables and replay from Kafka*, and §7 marks every projection table
+"rebuildable: yes". Retention says otherwise:
+
+| Table | PostgreSQL keeps | Kafka keeps |
+|---|---|---|
+| `telemetry_aggregate_1s` | 30 d | 6 h |
+| `prediction` | 30 d | 24 h |
+| `safety_decision`, `control_outcome` | 90 d | 7 d |
+| `equipment_state_history` | 1 y | compacted — latest per equipment only |
+
+A full rebuild as written would **delete up to 83 days of safety-decision audit records** — the
+records `AC-029` requires to be retained. After the Kafka retention window, PostgreSQL is the only
+copy, so those rows are not rebuildable; they are authoritative history.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Canonical dump, range-scoped rebuild.** "Byte-identical" means a canonical export — rows ordered by primary key, a fixed column list, canonical text per type — compares equal. Projection tables carry **no** non-deterministic column: keys come from the event's duplicate identity, times from the event. A rebuild replaces rows **only within the offset range it replays**, never truncating what Kafka no longer holds. §7 reads "rebuildable within topic retention" | the rebuild is a range operation, not a truncate; audit tables need a documented backup, as `control_state` already does |
+| **B** | Compare API responses instead | misses every column the API does not expose, which is where a projector bug hides |
+| **C** | Raise Kafka retention to match PostgreSQL | 90 d of decisions and 30 d of 10 Hz telemetry on a laptop broker, to keep a sentence true |
+
+**Recommendation: A.** It defines the comparison on what the AC is about — the read model's
+content — and removes a destructive operation instead of documenting it.
+
+---
+
+# OD-015 — OPEN — the 1 s aggregate has a bucket rule and nothing else
+
+> Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-004`, P1).
+
+## The problem
+
+`TIME_AND_DATA_QUALITY.md` §3 fixes the **bucket**: event time (`eventTimeUtc`), absolute second
+boundaries. §8 fixes **null handling for feature windows**: nulls excluded, `validSampleRatio`
+against an expected count derived from cadence. Nothing states, for `telemetry_aggregate_1s`:
+which statistics per channel; how quality and flags combine across a bucket; when a bucket is
+**final** (records arrive in per-partition order, but a gateway reconnect can deliver a late one);
+what happens to a record for a bucket already written.
+
+The second issue is duplication. Phase 5's feature builder also computes 1 s aggregates
+(`PREDICTION_SERVICE.md` §10) in Python. Two implementations of the same aggregate, in two languages,
+is how the dashboard and the model come to disagree about the same second.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **One definition, two implementations, one conformance fixture.** Per channel: `count`, `validCount`, `min`, `max`, `mean`, `validSampleRatio` (expected 10 per second); worst `qualityOverall`, union of flags. A bucket is an idempotent upsert keyed `(equipmentId, bucketStartUtc)`, recomputed from its records, so a redelivered record is not counted twice. A bucket is **final** once a record for the same equipment arrives whose event time is **5 s** past the bucket's end; a record for a final bucket is counted (`late_records_total`) and dropped. Lateness is measured in **event time in partition order**, not wall clock, so a replay makes the same decisions and the rebuild stays deterministic. A shared fixture of telemetry → expected aggregates is run by both the C# projector and Phase 5's Python code | the projector holds open buckets' records in memory (≤ 6 s × 10 Hz per equipment); a late record is lost from the aggregate, visibly, rather than merged non-idempotently |
+| **B** | Store the latest record per second, no statistics | simplest, rebuild-trivial; `measurements` becomes "a reading" rather than "an aggregate", and baseline #6's "1-second aggregates" is amended |
+| **C** | The operations projector consumes Phase 5's aggregates instead of computing its own | one implementation, but the operational store then depends on the AI pipeline, which `OPERATIONAL_DATA.md` §4 classifies as control-independent for a reason |
+
+**Recommendation: A.** B is honest and cheap if the dashboard never needs more than "latest"; the
+product owner should pick B if that is the case, since it removes the late-record question entirely.
+
+---
+
+# OD-016 — OPEN — who creates the Control Service's tables
+
+> Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-005`, P1).
+
+## The problem
+
+`OPERATIONAL_DATA.md` §7 lists `control_state` and `command_idempotency` as **control-service–owned
+and authoritative**; §9 says migrations are applied "by a single owner service"; `OPERATIONS_API.md`
+hosts the projectors and migrations are placed under `src/dotnet/OperationsService/Migrations` (§6).
+Read together: the Operations service would own the schema of the one set of tables it must never
+write, before their writer exists.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **One database, one schema per owner, each owner migrates its own.** Phase 4 creates the `operations` schema only. `control` is created by the control-service's migrations in Phase 7. Least-privilege roles (§16) follow the schema boundary | two migration histories to keep ordered at deploy; §6 and §9 are amended |
+| **B** | Phase 4 pre-creates the control tables from today's documents | the schema is written before the service that defines its needs, and the owner of a control-critical table becomes the read side |
+
+**Recommendation: A.**
+
+---
+
+# OD-017 — OPEN — the first HTTP hop names "JWT" and nothing that issues or verifies one
+
+> Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-006`, P1).
+
+## The problem
+
+The OpenAPI contract declares bearer JWT with `viewer` and `operator` roles. It names no issuer,
+signing algorithm, key distribution, audience, role-claim name, clock-skew allowance, or how a
+local or demo run obtains a token. `DEFINITION_OF_READY.md` §8 requires the mechanism be named.
+The rest of the system authenticates by mTLS (`ADR-0016`), so there is no precedent to inherit.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Asymmetric tokens, verifier holds only public keys.** ES256; the API validates `iss`, `aud`, `exp` (60 s skew) against a configured key set; roles in a `roles` claim. Local and demo tokens are minted by a repository script with a key pair generated on the developer's machine and never committed. Production-like takes the same validation with keys from its environment | a script and a key-generation step; no real login |
+| **B** | Symmetric HS256 with a shared secret | simpler, but anything that can verify can also mint — the API could issue itself `operator` |
+| **C** | An identity provider container (e.g. Keycloak) in every profile | real login flow, and a major dependency with its own ADR for a read-only API |
+
+**Recommendation: A.** It names every value, keeps minting out of the verifier, and leaves C
+possible later without changing what the API checks.
+
+---
+
+# OD-018 — OPEN — the numbers Phase 4 would otherwise invent
+
+> Raised 2026-09-30 by the Phase 4 DoR check (`P4-DOR-007`, P1). One decision because each value is
+> small and they interact through staleness.
+
+| Value | Where | Proposed | Why |
+|---|---|---|---|
+| Readiness gate | `OPERATIONS_API.md` §9 | ready once every projector has been **caught up** (lag 0 at a poll) at least once since start | a lag *threshold* on a quiet topic is meaningless; "has caught up once" is observable |
+| `X-Data-Staleness-Seconds` | OpenAPI header | seconds since the projector backing the route was last **caught up**; 0 while caught up | record age would show a quiet but current topic as stale; this separates "no news" from "behind" |
+| Rate limit | §13 | 20 requests/s per token subject, burst 40, `429` with problem details | 50 dashboard clients polling at 1 Hz leave headroom; per-subject, not per-IP, since tokens are the identity |
+| Retention partitions | `OPERATIONAL_DATA.md` §8, §15 | **daily** partitions for aggregates and predictions, monthly for the rest; a partition is dropped when its upper bound is older than retention | monthly partitions would keep 30-day aggregates for up to 61 days |
+| Staleness when Kafka is down | `OPERATIONS_API.md` §11 | the same header; the body carries no separate field | one mechanism, not two that can disagree |
+
+The product owner may accept the table as a whole or change individual values.
+
+---
+
+## Found while writing OD-011–018, and fixed directly
+
+`FaultInjectionRequest.profile` in the OpenAPI contract listed ten profiles. `OD-001` added
+`DRIVE_STUCK` on 2026-09-15 and the simulator implements it, so the contract had drifted from a
+resolved decision. The enum now lists eleven. No consumer exists (the route is Phase 11, AC-031).

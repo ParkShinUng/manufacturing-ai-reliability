@@ -452,6 +452,7 @@ components:
             - SENSOR_DROPOUT
             - COMM_LOSS
             - OOD_PROFILE
+            - DRIVE_STUCK
         channel:
           type: [string, 'null']
           description: Required for sensor-scoped profiles.
