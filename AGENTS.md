@@ -5,7 +5,7 @@ Before modifying code or creating implementation files, read `MASTER_SPEC.md` an
 ## Implementation gate — CHECK THIS FIRST, EVERY SESSION
 
 **Specification status: v0.3. Human decision: APPROVED_WITH_CONDITIONS — all conditions satisfied
-(2026-09-15). Gate: OPEN. Phases 1 and 2: COMPLETE (2026-09-22). Phase 3: IN PROGRESS (requested 2026-09-28).**
+(2026-09-15). Gate: OPEN. Phases 1 and 2: COMPLETE (2026-09-22). Phase 3: COMPLETE (2026-09-30). Phase 4: not requested.**
 
 Before doing ANY implementation work, read
 `docs/10-human-review/v0.3/HUMAN_APPROVAL.md`.
@@ -39,8 +39,9 @@ proving **AC-001, AC-002, AC-021, AC-022, AC-023**, Codex-verified and `LOAD-001
 
 The product owner asked for **Phase 3** on **2026-09-28**, after its Definition-of-Ready check
 resolved `OD-007`, `OD-008` and `OD-009` and `ADR-0021` fixed the Kafka client and broker runtime.
-That ADR's **group B** conditions are entry conditions, not paperwork: if one proves false, Phase 3
-stops and the ADR is amended. Nothing authorises **Phase 4** — ask first.
+It completed on **2026-09-30**: the Kafka event backbone in `src/dotnet/EventBackbone/` and the
+gateway's Kafka egress, proving **AC-026, AC-027, AC-045**, Codex-verified (round 1 REJECT, round 2
+ACCEPT) and green in CI. Nothing authorises **Phase 4** — ask first.
 
 Every change still follows `DEFINITION_OF_READY.md` and `DUAL_AGENT_PROTOCOL.md`: documentation and
 contracts first, Codex challenge where the mandatory list applies, tests mapped to AC IDs.

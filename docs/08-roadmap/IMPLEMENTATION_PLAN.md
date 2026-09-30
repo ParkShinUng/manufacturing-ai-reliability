@@ -75,7 +75,12 @@ surfaced, is resolved.
 > What Phase 2 does **not** include: the Kafka binding of the egress port (Phase 3), the metrics
 > exporter (Phase 8), and the `factory.equipment-states.v1` record.
 
-## Phase 3 — Kafka Event Backbone — **IN PROGRESS** (requested 2026-09-28)
+## Phase 3 — Kafka Event Backbone — **COMPLETE** (2026-09-30)
+
+> **Completed 2026-09-30.** AC-026, AC-027 and AC-045 are automated and pass locally and in CI.
+> Codex verification: round 1 REJECT (P3-COD-001..003), round 2 ACCEPT with one P2 (P3-COD-004),
+> all four fixed (`reviews/phase-3/`). Open, recorded not closed: the OPC UA real-path intermittent
+> in `TEST_SPECIFICATIONS.md`, mitigated but with its cause unproven.
 
 > **Definition-of-Ready check, 2026-09-23 — NOT READY.** Codex challenged it read-only
 > (`reviews/phase-3/`) and found ten items, three of them P0.
