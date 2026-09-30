@@ -15,7 +15,8 @@ namespace Mair.EventBackbone.Tests;
 /// authoritative schema rather than against a copy of it written in C#.
 /// </para>
 /// </summary>
-public sealed class TelemetryEgressTests : IClassFixture<KafkaBroker>, IAsyncLifetime
+[Collection(SharedKafka.Name)]
+public sealed class TelemetryEgressTests : IAsyncLifetime
 {
     private static readonly string Root = FindRoot();
 

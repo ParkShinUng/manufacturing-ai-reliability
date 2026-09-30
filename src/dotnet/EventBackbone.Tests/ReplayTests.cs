@@ -15,7 +15,8 @@ namespace Mair.EventBackbone.Tests;
 /// seek discards a backlog even when committed offsets say otherwise.
 /// </para>
 /// </summary>
-public sealed class ReplayTests : IClassFixture<KafkaBroker>, IAsyncLifetime
+[Collection(SharedKafka.Name)]
+public sealed class ReplayTests : IAsyncLifetime
 {
     private const string Topic = "factory.telemetry.v1";
 

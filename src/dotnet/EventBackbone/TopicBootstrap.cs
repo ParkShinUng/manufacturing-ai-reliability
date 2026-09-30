@@ -38,18 +38,20 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
         ArgumentNullException.ThrowIfNull(register);
 
         var metadata = admin.GetMetadata(AdminTimeout);
+        // Partition count and the replica count of every partition: both are register values
+        // AC-026 asserts, and a topic can drift on either.
         var existing = metadata.Topics
             .Where(t => t.Error.Code == ErrorCode.NoError)
-            .ToDictionary(t => t.Topic, t => t.Partitions.Count);
+            .ToDictionary(t => t.Topic, t => (Partitions: t.Partitions.Count, Replicas: t.Partitions.Select(p => p.Replicas.Length).ToArray()));
 
         var created = new List<string>();
         var unchanged = new List<string>();
 
         foreach (var spec in register)
         {
-            if (existing.TryGetValue(spec.Name, out var partitions))
+            if (existing.TryGetValue(spec.Name, out var live))
             {
-                await VerifyAsync(spec, partitions, cancellationToken);
+                await VerifyAsync(spec, live.Partitions, live.Replicas, cancellationToken);
                 unchanged.Add(spec.Name);
             }
             else
@@ -60,16 +62,37 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
 
         if (created.Count > 0)
         {
-            await admin.CreateTopicsAsync(
-                register.Where(s => created.Contains(s.Name)).Select(Specify),
-                new CreateTopicsOptions { RequestTimeout = AdminTimeout, OperationTimeout = AdminTimeout });
+            try
+            {
+                await admin.CreateTopicsAsync(
+                    register.Where(s => created.Contains(s.Name)).Select(Specify),
+                    new CreateTopicsOptions { RequestTimeout = AdminTimeout, OperationTimeout = AdminTimeout });
+            }
+            catch (CreateTopicsException ex) when (ex.Results.All(r =>
+                r.Error.Code is ErrorCode.NoError or ErrorCode.TopicAlreadyExists))
+            {
+                // Metadata can lag a creation - by a moment, or because another bootstrap run is
+                // doing the same thing. "Already exists" is not success and not failure: it means
+                // the topic must be verified like any other existing one, so it is. Anything other
+                // than that error is a real failure and propagates.
+                var raced = ex.Results.Where(r => r.Error.Code == ErrorCode.TopicAlreadyExists).Select(r => r.Topic).ToHashSet();
+                var fresh = admin.GetMetadata(AdminTimeout).Topics.ToDictionary(t => t.Topic);
+
+                foreach (var spec in register.Where(s => raced.Contains(s.Name)))
+                {
+                    var topic = fresh[spec.Name];
+                    await VerifyAsync(spec, topic.Partitions.Count, topic.Partitions.Select(p => p.Replicas.Length).ToArray(), cancellationToken);
+                    created.Remove(spec.Name);
+                    unchanged.Add(spec.Name);
+                }
+            }
         }
 
         return new BootstrapResult(created, unchanged);
     }
 
     /// <summary>Describes what is there and fails on any difference. Nothing here mutates.</summary>
-    private async Task VerifyAsync(TopicSpec spec, int partitions, CancellationToken cancellationToken)
+    private async Task VerifyAsync(TopicSpec spec, int partitions, int[] replicas, CancellationToken cancellationToken)
     {
         if (partitions != spec.Partitions)
         {
@@ -77,6 +100,17 @@ public sealed class TopicBootstrap(IAdminClient admin, bool productionLike = fal
                 $"{spec.Name} has {partitions} partitions, the register says {spec.Partitions}. " +
                 "Refusing to change it: re-partitioning a keyed topic re-keys every future record " +
                 "and breaks the per-key ordering already relied on (KAFKA_TOPOLOGY_AND_SEMANTICS.md §4).");
+        }
+
+        // Replication factor, per partition. Found missing by Codex's Phase 3 verification: a topic
+        // created with the wrong RF was reported Unchanged, although AC-026 names RF explicitly.
+        var expectedReplicas = TopicSpec.ReplicationFactor(productionLike);
+        if (replicas.Any(r => r != expectedReplicas))
+        {
+            throw new TopicBootstrapException(
+                $"{spec.Name} has replication factor {string.Join("/", replicas.Distinct())}, the register says " +
+                $"{expectedReplicas} for this deployment. Refusing to change it: raising RF is a partition " +
+                "reassignment, an operator decision, not a bootstrap side effect.");
         }
 
         var resource = new ConfigResource { Type = ResourceType.Topic, Name = spec.Name };

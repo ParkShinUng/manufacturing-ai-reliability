@@ -102,6 +102,22 @@ public sealed class TopicBootstrapTests : IClassFixture<KafkaBroker>
     }
 
     [Fact]
+    public async Task ATopicWithTheWrongReplicationFactorIsRefused()
+    {
+        // One broker can only hold RF 1, so the drift is produced from the other side: a topic
+        // created locally, then checked as the production-like register would check it, which says
+        // RF 3. Its own topic, so it does not depend on the order the other tests run in.
+        using var admin = _broker.Admin();
+        var spec = new TopicSpec("bootstrap.rf.test.v1", 3, CleanupPolicy.Delete, TimeSpan.FromHours(6));
+        await new TopicBootstrap(admin).RunAsync([spec]);
+
+        var refused = await Assert.ThrowsAsync<TopicBootstrapException>(
+            () => new TopicBootstrap(admin, productionLike: true).RunAsync([spec]));
+
+        Assert.Contains("replication factor", refused.Message);
+    }
+
+    [Fact]
     public async Task NoTopicIsAutoCreatedByAProducerOrConsumer()
     {
         // §2's register is the only thing that creates topics. Auto-creation would give a producer

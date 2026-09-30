@@ -256,7 +256,15 @@ public sealed class LoadScenarioTests
     private static void AssertEmitsCanonical(ProtocolRun run, SourceProtocol protocol)
     {
         // Every machine got telemetry out of the gateway, and every record is canonical.
-        Assert.All(run.Sinks, s => Assert.NotEmpty(s.Records));
+        // Says why a machine produced nothing, not only that it did not: an empty sink with a
+        // connected loop and one with a loop stuck reconnecting are different faults. Added while
+        // chasing the intermittent recorded in TEST_SPECIFICATIONS.md, whose first sighting left no
+        // cause behind.
+        var silent = run.Sinks.Select((s, i) => (Sink: s, Loop: run.Loops[i], Index: i)).Where(x => x.Sink.Records.Count == 0).ToList();
+        Assert.True(silent.Count == 0,
+            $"{silent.Count} of {run.Sinks.Count} machines emitted nothing. " + string.Join(" | ", silent.Take(5).Select(x =>
+                $"#{x.Index}: connected={x.Loop.ProtocolConnected} reconnects={x.Loop.ReconnectTotal} readFailures={x.Loop.ReadFailures} " +
+                $"connectFailures={x.Loop.ConnectFailures} polls={x.Loop.PollsCompleted} last={x.Loop.LastFailure ?? "none"}")));
 
         foreach (var record in run.Sinks.SelectMany(s => s.Records))
         {

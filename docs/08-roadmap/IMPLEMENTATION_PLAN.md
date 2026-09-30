@@ -124,6 +124,10 @@ surfaced, is resolved.
 >    consumer.
 >
 > Docker-dependent suites run in CI and fail rather than skip (B8).
+>
+> **Lag and record-age metrics**, listed above as a deliverable, were missed until Codex's
+> verification found them (`P3-COD-002`); they are measured in `ContractConsumer` and exported in
+> Phase 8 (`KAFKA_EVENT_BACKBONE.md` §17).
 7 topics with pinned partitions, retention, compaction · idempotent producers · manual offset
 commit · DLQ and redrive · lag and record-age metrics · replay on projector groups only ·
 **binding the gateway's egress port to `factory.telemetry.v1` and `factory.equipment-states.v1`**

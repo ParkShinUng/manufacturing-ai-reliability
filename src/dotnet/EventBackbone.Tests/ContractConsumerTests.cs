@@ -11,7 +11,8 @@ namespace Mair.EventBackbone.Tests;
 /// are the two things that decide whether data can be lost or duplicated.
 /// </para>
 /// </summary>
-public sealed class ContractConsumerTests : IClassFixture<KafkaBroker>, IAsyncLifetime
+[Collection(SharedKafka.Name)]
+public sealed class ContractConsumerTests : IAsyncLifetime
 {
     private const string Topic = "factory.telemetry.v1";
 

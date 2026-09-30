@@ -84,6 +84,31 @@ public sealed class ContractConsumer : IDisposable
     /// <summary>Records sent to the DLQ. Each one also raises an alert in §9's terms; that wiring is Phase 8.</summary>
     public long DeadLettered { get; private set; }
 
+    private readonly Dictionary<RejectionClass, long> _deadLetteredBy = [];
+    private readonly Dictionary<TopicPartition, long> _lag = [];
+    private readonly Dictionary<TopicPartition, DateTimeOffset> _newest = [];
+
+    /// <summary><c>dlq_messages_total{topic,reason}</c> for this consumer's topic.</summary>
+    public IReadOnlyDictionary<RejectionClass, long> DeadLetteredByReason => _deadLetteredBy;
+
+    /// <summary>
+    /// <c>kafka_consumer_lag{group,topic,partition}</c>: records between the newest one settled and
+    /// the partition's high watermark, as of the last fetch. Secondary signal (§12).
+    /// </summary>
+    public IReadOnlyDictionary<TopicPartition, long> Lag => _lag;
+
+    /// <summary>
+    /// <c>prediction_record_age_seconds{partition}</c> and its equivalent for every topic: the age of
+    /// the <b>newest settled record</b>, per assigned partition, measured from the record's own
+    /// timestamp. The primary signal (§12) — an aggregate offset lag can look healthy while one
+    /// partition starves, and record age cannot.
+    /// </summary>
+    public IReadOnlyDictionary<TopicPartition, TimeSpan> RecordAge()
+    {
+        var now = _time.GetUtcNow();
+        return _newest.ToDictionary(kv => kv.Key, kv => now - kv.Value);
+    }
+
     public long Processed { get; private set; }
 
     /// <summary>
@@ -139,7 +164,21 @@ public sealed class ContractConsumer : IDisposable
 
         _consumer.Commit(record);
         Processed++;
+        Measure(record);
         return true;
+    }
+
+    /// <summary>Lag and record age are measured on settled records only: a record in flight is not yet read.</summary>
+    private void Measure(ConsumeResult<string, byte[]> record)
+    {
+        _newest[record.TopicPartition] = record.Message.Timestamp.UtcDateTime;
+
+        // The high watermark cached from the last fetch; no extra round trip per record.
+        var watermarks = _consumer.GetWatermarkOffsets(record.TopicPartition);
+        if (watermarks.High != Offset.Unset)
+        {
+            _lag[record.TopicPartition] = Math.Max(0, watermarks.High.Value - (record.Offset.Value + 1));
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -211,6 +250,7 @@ public sealed class ContractConsumer : IDisposable
         });
 
         DeadLettered++;
+        _deadLetteredBy[rejection] = _deadLetteredBy.GetValueOrDefault(rejection) + 1;
     }
 
     public void Dispose()

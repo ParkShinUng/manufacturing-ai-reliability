@@ -222,16 +222,25 @@ in-process, the simulator being tick-driven. `LoadScenarioTests.Ac001_*` runs th
 every record through the **real** servers, clients and poll loops, per protocol, for a few seconds
 in every suite run (COD-P2-006); the 30 wall-clock minutes on that path are `LOAD-001`.
 
-**Known intermittent, recorded 2026-09-29, not yet explained.** `LoadScenarioTests.Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription`
-failed **once in eleven** full local runs of `dotnet test src/dotnet/Mair.sln`, the run right after
-Phase 3's broker-restart and replay suites were added. It passed alone, and in the eight full runs
-that followed. The failure message was not captured — the command that caught it filtered for the
-test name only — so the cause is **not known**. The working hypothesis is CPU contention: test
-projects run in parallel, and the Kafka suites now start containers and restart a broker while this
-test holds twenty OPC UA sessions whose keep-alive is 500 ms. It is recorded rather than "fixed" by
-serialising the test projects, because that would be a change made for a cause nobody has seen.
-If it recurs, the assertion message says which loop and why — `LastFailure` is in it — and CI logs
-print it in full.
+**Known intermittent, recorded 2026-09-29, cause not proven.** Two real-path OPC UA tests —
+`LoadScenarioTests.Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription` and the
+OPC UA case of the endpoint-outage scenario — failed occasionally in full local runs of
+`dotnet test src/dotnet/Mair.sln`, never when run alone, and only after Phase 3's Kafka suites were
+added. The first failure's message was lost to a filtered command; later ones were captured:
+"initial telemetry did not happen within 15 s", and every one of the twenty OPC UA clients emitting
+nothing. All clients failing together points at the host, not at one session.
+
+The working hypothesis was CPU contention: each Kafka test class started its own broker, so a full
+run started six Kafka JVMs while these tests held twenty OPC UA sessions with a 500 ms keep-alive.
+**Mitigation, 2026-09-29:** the Kafka test classes that need no empty broker share one
+(`SharedKafka` in `KafkaBroker.cs`); only `TopicBootstrapTests` keeps its own. Three full runs
+followed with no failure. That is consistent with the hypothesis but does not prove it, so this
+stays recorded as an intermittent rather than closed. The Kafka suite of the third run took
+8 h 38 min against about 2 min normally — the host was idle overnight and under memory pressure;
+the run passed, and the duration is recorded, not explained.
+
+If it recurs, the assertion names each silent machine with its connect, reconnect, read-failure and
+poll counts and its last failure, and CI logs print it in full.
 
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.

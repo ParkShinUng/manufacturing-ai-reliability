@@ -115,3 +115,21 @@ public sealed class KafkaBroker : IAsyncLifetime
         return port;
     }
 }
+
+/// <summary>
+/// One broker for every Kafka test class except <see cref="TopicBootstrapTests"/>, which needs a
+/// broker with nothing on it. The classes in this collection run one after another.
+/// <para>
+/// Until 2026-09-29 each class started its own container, so a full run started six Kafka JVMs at
+/// once, in parallel with the gateway's OPC UA suites. That coincided with an intermittent in those
+/// suites where every OPC UA client emitted nothing — cause unproven, recorded in
+/// <c>TEST_SPECIFICATIONS.md</c>. The isolation six brokers bought was not needed: these tests
+/// already use their own keys, groups and topics. This is a mitigation of the leading hypothesis,
+/// not a proven fix.
+/// </para>
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class SharedKafka : ICollectionFixture<KafkaBroker>
+{
+    public const string Name = "shared kafka broker";
+}

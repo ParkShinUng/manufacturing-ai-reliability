@@ -94,6 +94,21 @@ No service holds write ACLs to a topic it does not produce.
 `kafka_consumer_lag{group,topic,partition}`, `prediction_record_age_seconds{partition}`,
 `producer_errors_total`, `dlq_messages_total{topic,reason}`, `under_replicated_partitions`.
 
+**Phase 3 counts; Phase 8 exports** — the precedent `EDGE_GATEWAY.md` §17 set in Phase 2. Codex's
+Phase 3 verification found these missing entirely (`P3-COD-002`), although `IMPLEMENTATION_PLAN.md`
+lists them as a Phase 3 deliverable:
+
+| Metric | Phase 3 measurement |
+|---|---|
+| `kafka_consumer_lag{group,topic,partition}` | `ContractConsumer.Lag` — records between the newest settled one and the high watermark, per partition |
+| `prediction_record_age_seconds{partition}` | `ContractConsumer.RecordAge()` — age of the newest **settled** record per partition, from the record's own timestamp; the primary signal in §12 |
+| `dlq_messages_total{topic,reason}` | `ContractConsumer.DeadLetteredByReason` |
+| `producer_errors_total` | `KafkaTelemetrySink.DeliveryFailures`, `KafkaEquipmentStateSink.DeliveryFailures` |
+| `under_replicated_partitions` | a **broker** metric, not a client measurement — Phase 8 reads it from the broker |
+
+Record age is measured from the record, not from when it was read: a record stamped a minute ago
+and consumed now is a minute old, which is what makes it the freshness signal §12 wants.
+
 ## 18. Performance targets (TARGET — unmeasured)
 2 500 telemetry ev/s at load profile; P95 produce ≤ 20 ms; broker restart recovery ≤ 30 s.
 

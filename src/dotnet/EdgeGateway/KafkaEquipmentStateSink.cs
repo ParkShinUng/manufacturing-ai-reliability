@@ -73,6 +73,11 @@ public sealed class KafkaEquipmentStateSink : IEquipmentStateSink, IDisposable
             BootstrapServers = bootstrapServers,
             EnableIdempotence = true,
             Acks = Acks.All,
+
+            // Topics come from the register only (§2). The test broker refuses auto-creation
+            // globally; this makes the producer refuse it too, whatever broker it meets. Found
+            // missing by Codex's Phase 3 verification.
+            AllowAutoCreateTopics = false,
             SocketConnectionSetupTimeoutMs = 10_000,
             MessageTimeoutMs = 30_000,
             RetryBackoffMs = 100,

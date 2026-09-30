@@ -8,7 +8,8 @@ namespace Mair.EventBackbone.Tests;
 /// Every record any of these tests produces is validated against <c>equipment-state.schema.json</c>
 /// itself, so the rules and the contract are checked together.
 /// </summary>
-public sealed class EquipmentStateStreamTests : IClassFixture<KafkaBroker>, IAsyncLifetime
+[Collection(SharedKafka.Name)]
+public sealed class EquipmentStateStreamTests : IAsyncLifetime
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 29, 12, 0, 0, TimeSpan.Zero);
     private const long Epoch = 1_790_000_000_000;
