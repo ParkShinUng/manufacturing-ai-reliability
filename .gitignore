@@ -12,6 +12,8 @@
 .env.*
 !.env.example
 *.pem
+# Local ES256 keys for scripts/mint-token.mjs (ADR-0024). Never committed.
+.local/
 *.key
 *.pfx
 *.p12

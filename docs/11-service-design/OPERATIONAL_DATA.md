@@ -119,7 +119,9 @@ at runtime.
 per-second reading write ≥ 250 rows/s; correlation trace query P95 ≤ 200 ms; equipment summary P95 ≤ 100 ms.
 
 ## 19. Test strategy
-Migration up/down; idempotent upsert under duplicate delivery; rebuild-from-Kafka equivalence
+Migrations, **forward-only** (ADR-0024): up from empty; a second run applies nothing; a failing
+migration leaves the schema unchanged; an edited applied file is refused; two runners started
+together apply each file once. Idempotent upsert under duplicate delivery; rebuild-from-Kafka equivalence
 (equal canonical dumps, §9a); retention correctness; AC-047 trace query.
 
 ## 20. Acceptance criteria

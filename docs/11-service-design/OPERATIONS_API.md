@@ -44,7 +44,9 @@ be meaningless on a quiet topic.
 active reason codes; `GET /api/v1/equipment/{id}/decisions?from&to&page` → paged decisions;
 `GET /api/v1/trace/{correlationId}` → prediction→decision→command chain with the prediction's
 feature-window reference and its per-second readings (OD-013; **AC-047**, live chain **AC-006**);
-`GET /api/v1/platform/health` → inference availability, lag, error rate, fallback rate;
+`GET /api/v1/platform/health` → inference availability, lag, error rate, fallback rate — from the
+process's own view of its dependencies, so it answers when PostgreSQL does not (no staleness
+header, no 503);
 `POST /api/v1/demo/faults` → 403 unless `PROFILE=demo`.
 
 ## 11. Failure behaviour
