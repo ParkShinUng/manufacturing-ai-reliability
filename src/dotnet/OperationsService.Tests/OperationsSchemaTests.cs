@@ -97,6 +97,15 @@ public sealed class OperationsSchemaTests(PostgresDatabase postgres) : IClassFix
                 ORDER BY column_name
                 """, table);
             Assert.True(provenance.Count == 3, $"{table} lacks non-null provenance: has [{string.Join(", ", provenance)}]");
+
+            // A range rebuild finds its rows by provenance (OD-014); without the index it scans.
+            var indexed = await ColumnAsync(db, """
+                SELECT i.relname FROM pg_index x
+                JOIN pg_class i ON i.oid = x.indexrelid
+                WHERE x.indrelid = ('operations.' || $1)::regclass
+                  AND pg_get_indexdef(x.indexrelid) LIKE '%(source_topic, source_partition, source_offset)%'
+                """, table);
+            Assert.True(indexed.Count == 1, $"{table} has no provenance index");
         }
     }
 

@@ -179,6 +179,8 @@ CREATE INDEX equipment_state_history_source ON equipment_state_history (source_t
 CREATE INDEX prediction_source ON prediction (source_topic, source_partition, source_offset);
 CREATE INDEX safety_decision_source ON safety_decision (source_topic, source_partition, source_offset);
 CREATE INDEX control_outcome_source ON control_outcome (source_topic, source_partition, source_offset);
+CREATE INDEX model_deployment_source ON model_deployment (source_topic, source_partition, source_offset);
+CREATE INDEX authorization_watermark_source ON authorization_watermark (source_topic, source_partition, source_offset);
 
 -- Daily for the 30-day tables, monthly for the audit tables (OD-018). Named <table>_pYYYYMMDD or
 -- <table>_pYYYYMM. Idempotent; the lock makes two concurrent callers safe.
