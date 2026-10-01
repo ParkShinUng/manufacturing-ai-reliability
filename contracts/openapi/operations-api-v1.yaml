@@ -153,8 +153,12 @@ paths:
   /trace/{correlationId}:
     get:
       tags: [trace]
-      summary: Retrieve the full telemetry -> prediction -> decision -> command chain
-      description: Satisfies AC-006. Backed by an index on correlation_id, so this is a single query.
+      summary: Retrieve the prediction -> decision -> command chain, with the prediction's window
+      description: >
+        The chain starts at the prediction (OD-013); `window` carries its feature-window reference
+        and that window's per-second readings. Phase 4 proves store-and-query (AC-047); the live
+        chain from real producers is proven in Phase 7 (AC-006). Backed by an index on
+        correlation_id, so this is a single query.
       parameters:
         - name: correlationId
           in: path
@@ -442,6 +446,15 @@ components:
         controlEpoch: { type: integer }
         appliedTargetPct: { type: [number, 'null'] }
         resultingMode: { $ref: '#/components/schemas/ControlMode' }
+        modeTransitionId:
+          type: [string, 'null']
+          pattern: '^M(10|[1-9])$'
+          description: Set when this outcome changed the mode (OD-019). Mode transitions are audit records (AC-029).
+        fromMode:
+          anyOf:
+            - $ref: '#/components/schemas/ControlMode'
+            - type: 'null'
+          description: The mode before the transition. Null when the outcome changed no mode, and for M1.
         autonomous:
           type: boolean
           description: True when the Control Service acted without a Supervisor command (watchdog fallback).

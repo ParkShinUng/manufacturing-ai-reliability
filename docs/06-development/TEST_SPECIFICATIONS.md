@@ -350,6 +350,80 @@ schema `_manifest.json` pairs it with; each of the 23 validation keywords the co
 rejects an invalid case **and** accepts a valid one; and an inventory test fails if a schema starts
 using a keyword with no case.
 
+## 4c. Phase 4 operational-data and API test specifications
+
+Added 2026-10-01. `AC-028`, `AC-029`, `AC-030` and `AC-047` were listed in §7a as unspecified, and
+the Phase 4 Definition-of-Ready check made writing them a condition of starting Phase 4
+(`P4-DOR-010`). `AC-046` is `PROJ-001` above.
+
+**What these tests feed the projector.** Predictions, decisions and control outcomes have no
+producer until Phases 5–7, so these suites write **schema-valid records** — each validated against
+its contract before it is produced — to the **real** topics, through the real projector, into a real
+PostgreSQL. That proves what Phase 4 owns: storage, rebuild and query. It does **not** prove that
+the later producers link up; that claim is the live-chain criterion, verified in Phase 7 (OD-011).
+
+### PROJ-002 — a projection rebuilt into an empty store equals the original → AC-028
+**Setup:** real broker and PostgreSQL 18.6; a fixture stream on every projected topic, including,
+for `factory.telemetry.v1`: a **duplicate** delivery of one record, two records in the same second
+with equal `eventTimeUtc` and different `sequence`, and a record for an earlier second arriving
+after later ones.
+**Trigger:** project the stream; take the canonical dump (`OPERATIONAL_DATA.md` §9a). Then migrate
+a **second, empty** database and project the same retained range into it with a fresh group.
+**Assert:** the two canonical dumps are **byte-identical**, table by table · `telemetry_reading_1s`
+holds, per second, the reading with the greatest `(eventTimeUtc, sequence)`, and the duplicate and
+the late record change nothing they should not (OD-015) · no projection table has a column whose
+value is not derived from the record or its offset — checked against the catalogue, not by
+inspection: no sequence, no default calling `now()`, no generated identity (OD-014) · the dump of the
+same rows is identical from sessions with different `DateStyle`, `TimeZone` and
+`extra_float_digits` (ADR-0024 B6).
+
+### AUDIT-001 — audit records are retained and queryable → AC-029
+**Setup:** as PROJ-002, with schema-valid safety decisions and control outcomes for two equipment
+over a span crossing a partition boundary; some outcomes are **mode transitions**, carrying
+`modeTransitionId` and `fromMode` (OD-019).
+**Trigger:** query `/equipment/{id}/decisions` and `/equipment/{id}/commands` by equipment and
+time range, paging with a limit smaller than the result, while new records keep arriving; run the
+retention job at a chosen "now".
+**Assert:** each query returns exactly the records of that equipment and range, newest first, and
+paging by keyset cursor returns every record **once** even with inserts arriving between pages ·
+mode-transition outcomes come back with `fromMode` and `modeTransitionId` · the retention job drops
+a partition only when its **upper bound** is older than the table's retention (90 d decisions and
+outcomes, 1 y mode history), never one that still holds a record inside it (OD-018) · a range
+rebuild (`PROJ-001`) leaves audit rows **outside** the replayed range untouched, so history past
+Kafka's 7 d survives it (OD-014) · a control outcome with `modeTransitionId` and no `fromMode` is
+DLQ'd, not stored (the contract, via the shared component).
+
+### API-001 — every response the API gives validates against the contract → AC-030
+**Setup:** the Operations API on the projected store of PROJ-002, an ES256 key pair minted by
+`scripts/mint-token.mjs`, and the ADR-0024 harness wrapped around every request the suite makes.
+**Trigger:** for every route and **every documented status**: the success response · `400` (a
+`limit` of 0 and of 501, a malformed cursor, a malformed `uuid`, an `equipmentId` outside the
+pattern) · `401` (no token; each refused token of ADR-0024 B2) · `403` (a valid token with no
+recognised role) · `404` (an unknown equipment, an unknown correlation ID) · `429` (a burst above 40
+from one subject) · `503` (PostgreSQL stopped).
+**Assert:** the harness passes every response — documented status, media type, documented headers
+with valid values, body valid against the selected schema, `uuid` and `date-time` asserted ·
+`X-Data-Staleness-Seconds` is on every projection-backed response, `0` while caught up, and grows
+while the broker is stopped (OD-018) · an equipment with no control outcome has `controlMode: null`,
+and an equipment with no health record makes the health fields `null`, never a guessed value
+(OD-012) · `/platform/health` still answers while PostgreSQL is stopped · the coverage check finds
+every documented `(path, method, status)` exercised. **Excluded and recorded:** `POST /demo/faults`
+— the route is **absent** outside the demo profile, and the demo profile and its criterion are Phase 11; in
+Phase 4 the suite asserts only that the route does not exist.
+
+### TRACE-001 — the trace returns the stored chain in one query → AC-047
+**Setup:** schema-valid records linked as `EVENT_CONTRACTS.md` §2 defines (OD-013): a prediction
+with correlation ID *C* and `causationId` = its window ID, a decision caused by the prediction, a
+control outcome caused by the decision, and telemetry for the window's event-time range — among
+twenty equipment and 24 h of per-second readings, so the index and not the data size is tested.
+**Trigger:** `GET /trace/{C}`; then the same for a chain with **no** control outcome, and for an
+unknown correlation ID.
+**Assert:** the response holds the prediction, the decision and the command, and `window` with the
+prediction's window reference and **its** per-second readings — none from outside
+`[startUtc, endUtc)` · a missing link is `null`, never invented (OD-012) · an unknown ID is `404` ·
+the request issues **one** SQL statement, counted from Npgsql's diagnostics rather than inferred ·
+P95 ≤ **200 ms** over 100 requests. This proves store-and-query only (see the note above).
+
 ## 5. Load test specifications
 
 | ID | Scenario | Asserts |
@@ -515,7 +589,6 @@ becoming a permanent excuse:
 
 | AC | Phase |
 |---|---|
-| AC-028, AC-029, AC-030, AC-047 | 4 |
 | AC-008, AC-024, AC-025, AC-032 | 5 |
 | AC-016, AC-017 | 6 |
 | AC-006, AC-014, AC-038, AC-039, AC-040 | 7 |

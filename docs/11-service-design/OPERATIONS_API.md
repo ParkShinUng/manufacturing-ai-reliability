@@ -90,7 +90,7 @@ P95 summary ≤ 100 ms; P95 trace ≤ 200 ms; 50 concurrent dashboard clients.
 
 ## 19. Test strategy
 Contract tests against OpenAPI (request and response); authz matrix tests per role; demo-endpoint
-403 outside demo profile; AC-006 trace; staleness header correctness.
+403 outside demo profile; AC-047 trace store-and-query (AC-006, the live chain, in Phase 7); staleness header correctness.
 
 ## 20. Acceptance criteria
 AC-047, AC-009, AC-030, AC-031; AC-006 in Phase 7 (OD-011).

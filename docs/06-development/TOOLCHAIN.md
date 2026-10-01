@@ -61,8 +61,8 @@ assets of its own and pulls in GDS and complex-type assemblies neither service n
 ### Phase 4 — pinned by ADR-0024, not yet referenced
 
 Accepted 2026-10-01. **Nothing below is in a project file yet**: Phase 4's Definition-of-Ready check
-still owes its test specifications (`P4-DOR-010`), and ADR-0024's group B conditions are verified
-by the Phase 4 spike. Fixed here so that no one chooses them again.
+is READY (2026-10-01) but implementation has not started, and ADR-0024's group B conditions are
+verified by the Phase 4 spike. Fixed here so that no one chooses them again.
 
 | Component | Package / image | Version | Licence |
 |---|---|---|---|

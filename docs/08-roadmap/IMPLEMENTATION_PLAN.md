@@ -154,6 +154,15 @@ the read-model rebuild is Phase 4 (OD-007).
 > applied). The product owner chose `OD-015` B — latest reading per second, no statistics — over
 > the recommended A. Remaining before Phase 4 starts: the dependency ADRs (`P4-DOR-009`, including
 > the JWT decision `OD-017` requires) and the test specifications (`P4-DOR-010`).
+>
+> **2026-10-01:** `ADR-0024` accepted after three Codex rounds (`P4-DOR-009`). Test specifications
+> written — `PROJ-002`, `AUDIT-001`, `API-001`, `TRACE-001` in `TEST_SPECIFICATIONS.md` §4c
+> (`P4-DOR-010`). Writing them found that the `/commands` response could not show a mode
+> transition; `fromMode` and `modeTransitionId` were added to it (OD-019).
+>
+> **Definition-of-Ready re-check, 2026-10-01 — READY.** Codex verified `P4-DOR-001`–`010` closed and
+> each new specification falsifiable (`reviews/phase-4/CODEX_DOR_VERIFY_raw.md`); its three new
+> findings were stale wording, fixed the same day.
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.
 **Proof:** **AC-047** (trace store-and-query, OD-011), AC-028, AC-029, AC-030, **AC-046** (read
