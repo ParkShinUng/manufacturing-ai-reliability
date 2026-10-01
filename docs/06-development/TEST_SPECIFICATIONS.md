@@ -255,9 +255,9 @@ poll counts and its last failure, and CI logs print it in full.
 suites — two more brokers and five PostgreSQL containers in parallel with the gateway's OPC UA tests.
 `Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription` failed; **its message was not
 captured**, because the command filtered for test names only — the same mistake as the first
-occurrence. The next full run passed. A further pair of runs was stopped by the host for low memory
-before finishing, so no more is known. The added containers are consistent with the contention
-hypothesis and do not prove it.
+occurrence. Every full run since has passed: four, the last two with the whole log kept so that a
+failure could not lose its message again (one further run was stopped by the host for low memory).
+The added containers are consistent with the contention hypothesis and do not prove it.
 
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
