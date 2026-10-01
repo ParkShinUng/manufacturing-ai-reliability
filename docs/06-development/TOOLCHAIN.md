@@ -12,7 +12,8 @@ The baseline favors supported/LTS or mature stable releases over preview release
   matter.
 - Apache Kafka: **4.3.1**, KRaft mode
 - Kubernetes development target: **1.36.x** stable patch line; do not depend on 1.37-only APIs in baseline
-- PostgreSQL: major **18**, exact patch pinned in container manifest at repository initialization
+- PostgreSQL: **18.6**, digest pinned by ADR-0024 (2026-10-01). This line used to say the patch would
+  be pinned "at repository initialization"; like Node's, it was not, until Phase 4 needed it.
 - Container images: pin exact tags/digests in reproducible deployment profiles; avoid `latest`
 
 ## OT protocol libraries — pinned by ADR-0020 (accepted 2026-09-16)
@@ -56,6 +57,23 @@ last redistributable under Microsoft's terms rather than an open licence. See AD
 `OPCFoundation.NetStandard.Opc.Ua.Core` arrives transitively and is not referenced directly. The
 `OPCFoundation.NetStandard.Opc.Ua` **meta package is deliberately not used** — it has no framework
 assets of its own and pulls in GDS and complex-type assemblies neither service needs.
+
+### Phase 4 — pinned by ADR-0024, not yet referenced
+
+Accepted 2026-10-01. **Nothing below is in a project file yet**: Phase 4's Definition-of-Ready check
+still owes its test specifications (`P4-DOR-010`), and ADR-0024's group B conditions are verified
+by the Phase 4 spike. Fixed here so that no one chooses them again.
+
+| Component | Package / image | Version | Licence |
+|---|---|---|---|
+| operations-service, PostgreSQL access | `Npgsql` | **10.0.3** | PostgreSQL — **not yet in** `scripts/license-scan.mjs`'s allow-list; added with the package (ADR-0024 B1) |
+| operations-service, bearer tokens | `Microsoft.AspNetCore.Authentication.JwtBearer` | **10.0.12** | MIT; brings `Microsoft.IdentityModel.*` **8.19.2** |
+| test projects, OpenAPI contract as JSON | `YamlDotNet` | **18.1.0** | MIT |
+| tests and local runs | `postgres` | **18.6**, digest `sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722` | PostgreSQL |
+| API hosting, rate limiting | `Microsoft.AspNetCore.App` shared framework | with the SDK | MIT |
+| local token minting | Node built-in `crypto` | with Node 24.13.0 | — |
+
+The migration runner is in-repository code, not a package (ADR-0024).
 
 ### Verification record — 2026-09-18
 

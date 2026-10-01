@@ -1,7 +1,7 @@
 # ADR-0024 — operational store access, migrations, API hosting, authentication and contract testing
-Status: **Proposed** (2026-09-30), **revised after round 1** of the Codex challenge
+Status: **Accepted** (2026-10-01, by the product owner). Proposed 2026-09-30, **revised after round 1** of the Codex challenge
 ([`reviews/phase-4/CODEX_ADR-0024_CHALLENGE_raw.md`](../../reviews/phase-4/CODEX_ADR-0024_CHALLENGE_raw.md),
-`REVISE`, then round 2 `REVISE`, round 3 **`ACCEPT`**) — see the classification sections at the end. Awaiting the product owner.
+`REVISE`, then round 2 `REVISE`, round 3 **`ACCEPT`**) — see the classification sections at the end. Group B conditions are Phase 4 entry conditions.
 `persistence`, `major dependency`, `security boundaries` and `synchronous communication` are on the
 mandatory participation list (`DUAL_AGENT_PROTOCOL.md` §2).
 Phase: Phase 4 entry condition (`P4-DOR-009`; `OD-017` condition 2).
@@ -150,7 +150,7 @@ once by the suite, so an error response nobody triggers cannot hide.
 the Kafka broker is, not by the `Testcontainers.PostgreSql` module: one more package for a container
 the core API starts in a few lines.
 
-## Decision (proposed)
+## Decision
 
 | Concern | Choice | Where |
 |---|---|---|
