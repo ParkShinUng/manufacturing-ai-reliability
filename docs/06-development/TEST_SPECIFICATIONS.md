@@ -419,7 +419,9 @@ over a span crossing a partition boundary; some outcomes are **mode transitions*
 time range, paging with a limit smaller than the result, while new records keep arriving; run the
 retention job at a chosen "now".
 **Assert:** each query returns exactly the records of that equipment and range, newest first, and
-paging by keyset cursor returns every record **once** even with inserts arriving between pages ·
+paging by keyset cursor returns every record that existed when the first page was served exactly
+**once**, with inserts arriving between pages; a record inserted later appears once or not at all,
+by where its key falls against the cursor, and never twice (`OPERATIONS_API.md` §10a) ·
 mode-transition outcomes come back with `fromMode` and `modeTransitionId` · the retention job drops
 a partition only when its **upper bound** is older than the table's retention (90 d decisions and
 outcomes, 1 y mode history), never one that still holds a record inside it (OD-018) · a range
@@ -462,9 +464,9 @@ control outcome caused by the decision, and telemetry for the window's event-tim
 twenty equipment and 24 h of per-second readings, so the index and not the data size is tested.
 **Trigger:** `GET /trace/{C}`; then the same for a chain with **no** control outcome, and for an
 unknown correlation ID.
-**Assert:** the response holds the prediction, the decision and the command, and `window` with the
+**Assert:** the response holds the prediction, every decision and every command carrying *C*, and `window` with the
 prediction's window reference and **its** per-second readings — none from outside
-`[startUtc, endUtc)` · a missing link is `null`, never invented (OD-012) · an unknown ID is `404` ·
+`[startUtc, endUtc)` · a missing link is `null` or an empty array, never invented (OD-012) · an unknown ID is `404` ·
 the request issues **one** SQL statement, counted from Npgsql's diagnostics rather than inferred ·
 P95 ≤ **200 ms** over 100 requests. This proves store-and-query only (see the note above).
 

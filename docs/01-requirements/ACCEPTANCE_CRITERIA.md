@@ -96,7 +96,7 @@ Each criterion is testable, mapped to requirement IDs, and assigned to a test su
 - **AC-047 → FR-032/NFR-002** *(new 2026-09-30, OD-011; verified in **Phase 4**)* — Given
   schema-valid prediction, safety-decision and control-outcome records linked by `correlationId` and
   `causationId` on the real topics, the projector stores them and `GET /trace/{correlationId}`
-  returns the chain in a single query within 200 ms; a link with no record is `null`, never invented
+  returns the chain in a single query within 200 ms; a link with no record is `null` or an empty array, never invented
   (OD-012). This proves store-and-query, **not** that producers link up — that is AC-006.
 - **AC-007 → FR-034** — Deliver the same command twice with an identical idempotency key; the
   equipment state changes **at most once**.

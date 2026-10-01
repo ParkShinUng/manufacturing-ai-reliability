@@ -790,6 +790,13 @@ is the kind this repository treats as a safety concern.
 3. Examples and tests for an equipment with no control outcome and a trace with no command are part
    of the Phase 4 test specifications (`P4-DOR-010`).
 
+**Amended 2026-10-01** by the read-model mapping challenge (`reviews/phase-4/CODEX_API_MAPPING_raw.md`,
+`P4-M-003`): `CorrelationTrace.decision` and `.command` became the arrays `decisions` and `commands`,
+because nothing limits a correlation ID to one of each; an empty array carries this decision's
+meaning. The same rule reaches `EquipmentSummary.qualityOverall` and `/models`'
+`watermarkAgeSeconds`. It does **not** reach `PlatformHealth.fallbackRatePct`, which is omitted when
+unmeasurable instead: an unavailable store is not "no record observed" (`P4-M-001`).
+
 ---
 
 # OD-013 — RESOLVED 2026-09-30 — option A — the trace's telemetry link cannot be joined as the contract describes it

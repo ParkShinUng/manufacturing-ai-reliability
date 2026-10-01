@@ -218,10 +218,10 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/ModelDeployment' }
                   watermarkAgeSeconds:
-                    type: number
+                    type: [number, 'null']
                     description: >
                       Age of the last AuthorizationWatermark. Above 90 the Supervisor treats all
-                      models as unauthorized (ADR-0019).
+                      models as unauthorized (ADR-0019). Null = no watermark observed (OD-012 rule).
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -371,13 +371,20 @@ components:
             - type: 'null'
           description: Null = no record observed - the projection holds no control outcome for this equipment (OD-012). Never means "not implemented".
         aiEligible: { type: boolean }
-        qualityOverall: { $ref: '#/components/schemas/QualityOverall' }
+        qualityOverall:
+          anyOf:
+            - $ref: '#/components/schemas/QualityOverall'
+            - type: 'null'
+          description: Null = no reading observed (OD-012 rule).
         commandedRatePct: { type: [number, 'null'] }
         appliedRatePct: { type: [number, 'null'] }
         anomalyScore: { type: [number, 'null'] }
         activeReasonCodes:
           type: array
           items: { type: string }
+          description: >
+            The active rejection or fallback reason (FR-050) - the latest decision's reason codes when
+            it is REJECT or FALLBACK, empty when it is ACCEPT or there is none.
         updatedAtUtc: { type: string, format: date-time }
 
     EquipmentDetail:
@@ -464,9 +471,11 @@ components:
     CorrelationTrace:
       type: object
       description: >
-        The chain starts at the prediction (OD-013). Each link is null when no record of it was
-        observed (OD-012); a link is never invented.
-      required: [correlationId, window, prediction, decision, command]
+        The chain starts at the prediction (OD-013). A link with no record observed is null or an
+        empty array (OD-012); a link is never invented. Every decision and every outcome carrying
+        the correlation ID is returned, oldest first - nothing limits them to one, and choosing one
+        would hide the rest from an audit.
+      required: [correlationId, window, prediction, decisions, commands]
       properties:
         correlationId: { type: string, format: uuid }
         window:
@@ -482,18 +491,16 @@ components:
               type: array
               items: { type: object, additionalProperties: true }
         prediction: { type: [object, 'null'], additionalProperties: true }
-        decision:
-          anyOf:
-            - $ref: '#/components/schemas/SafetyDecisionSummary'
-            - type: 'null'
-        command:
-          anyOf:
-            - $ref: '#/components/schemas/ControlOutcomeSummary'
-            - type: 'null'
+        decisions:
+          type: array
+          items: { $ref: '#/components/schemas/SafetyDecisionSummary' }
+        commands:
+          type: array
+          items: { $ref: '#/components/schemas/ControlOutcomeSummary' }
 
     PlatformHealth:
       type: object
-      required: [inferenceAvailable, supervisorHealthy, controlServiceHealthy, fallbackRatePct]
+      required: [inferenceAvailable, supervisorHealthy, controlServiceHealthy]
       properties:
         inferenceAvailable: { type: [boolean, 'null'], description: Null = no health record observed (OD-012). }
         supervisorHealthy: { type: [boolean, 'null'], description: Null = no health record observed (OD-012). }
@@ -504,7 +511,10 @@ components:
         authorizationWatermarkAgeSeconds: { type: number }
         fallbackRatePct:
           type: number
-          description: Percentage of equipment currently in SAFE_FALLBACK.
+          description: >
+            Percentage of current equipment in SAFE_FALLBACK. Absent when it cannot be measured -
+            PostgreSQL not answering, or no current equipment. Absent, not null: null means no record
+            observed (OD-012), and an unavailable store is a different fact.
         errorRatePct: { type: number }
         clockSkewSeconds: { type: number }
 
