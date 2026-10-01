@@ -190,6 +190,14 @@ the read-model rebuild is Phase 4 (OD-007).
 >    not proven — so each consumer now runs its own loop, as production does.
 > 4. **The Operations API** — authentication, rate limit, staleness, every route — `API-001`,
 >    `TRACE-001`, the query half of `AUDIT-001`.
+>    **Done 2026-10-01.** First the read-model mapping (`OPERATIONS_API.md` §10a), challenged by
+>    Codex before any route existed: the trace's decision and command became arrays, `activeReasonCodes`
+>    only for a rejection, `fallbackRatePct` omitted rather than `null` when unmeasurable. Then the
+>    routes, which the harness made honest: a SQL error was being answered `503` — an outage — and
+>    now surfaces as the defect it is (only connection-class failures are `503`); the staleness header
+>    showed seconds since the last caught-up *check* and so read `4` for a projector that was current,
+>    and now reads `0` while the latest check found it caught up; and a list query missed a line break
+>    between two SQL fragments. The readiness gate (OD-018) is in, as the route's precondition.
 > 5. **Lifecycle** — readiness gate, retention job, PostgreSQL outage behaviour (`FAIL-DB-001`).
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.

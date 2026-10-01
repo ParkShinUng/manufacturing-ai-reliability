@@ -74,7 +74,21 @@ public static class OperationsAuth
                 NameClaimType = "sub",
                 RoleClaimType = RoleClaim,
             };
-            o.Events = new JwtBearerEvents { OnTokenValidated = Admit };
+            o.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = Admit,
+
+                // AC-030: an error is problem+json like any other, not an empty 401/403.
+                OnChallenge = context =>
+                {
+                    context.HandleResponse();
+                    context.Response.Headers.WWWAuthenticate = "Bearer";
+                    return Api.Problems.WriteAsync(context.HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized",
+                        "a valid bearer token is required");
+                },
+                OnForbidden = context => Api.Problems.WriteAsync(context.HttpContext, StatusCodes.Status403Forbidden, "Forbidden",
+                    "the token carries no role this route allows"),
+            };
         });
     }
 

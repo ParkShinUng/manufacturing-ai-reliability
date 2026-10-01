@@ -259,6 +259,14 @@ occurrence. Every full run since has passed: four, the last two with the whole l
 failure could not lose its message again (one further run was stopped by the host for low memory).
 The added containers are consistent with the contention hypothesis and do not prove it.
 
+**Captured 2026-10-01**, in the full run closing Phase 4 step 4 — the first time with the message:
+all twenty loops `connected=False`, `connectFailures=0`, `readFailures=0`, `polls=0` after 8 s. No
+loop finished its **first connect** — neither succeeded nor failed — so this is not sessions dropping
+or keep-alives timing out, which is what the hypothesis had pictured. It is consistent with OPC UA
+session establishment (certificate validation, the secure channel handshake) not completing on a
+starved CPU; it is not proof. The loop now counts connect **attempts** too, so the next occurrence
+tells a connect never begun from one still in flight.
+
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
 **Trigger:** collect paired samples over 5 minutes across the full rate range, including a slew.
@@ -437,7 +445,9 @@ fresh store, gives a byte-identical canonical dump and the same current view (OD
 **Storage half automated 2026-10-01** — `ProjectionTests`: a tombstone keeps history, adds one
 decommission row and empties the current view; a later state restores it; a re-read tombstone adds
 nothing; a fresh store gives the same dump; a mode transition is stored with `fromMode`, and one
-without it is DLQ'd. The query half (paging, ranges) and the retention job are steps 4 and 5.
+without it is DLQ'd. **Query half automated 2026-10-01** — `OperationsApiTests`: 25 decisions across a month boundary,
+paged by tens with rows arriving between pages, every existing one exactly once; `from` inclusive and
+`to` exclusive. The retention job is step 5.
 
 ### API-001 — every response the API gives validates against the contract → AC-030
 **Setup:** the Operations API on the projected store of PROJ-002, an ES256 key pair minted by
@@ -456,6 +466,15 @@ and an equipment with no health record makes the health fields `null`, never a g
 every documented `(path, method, status)` exercised. **Excluded and recorded:** `POST /demo/faults`
 — the route is **absent** outside the demo profile, and the demo profile and its criterion are Phase 11; in
 Phase 4 the suite asserts only that the route does not exist.
+
+
+**Automated 2026-10-01** — `OperationsApiTests`, the API on Kestrel over a projected store, every
+response through the ADR-0024 harness. All seven routes give 200, 401, 403 and 429; every route
+with parameters gives 400; the four with a resource give 404; the six database-backed ones give 503
+with PostgreSQL stopped, while health answers without `fallbackRatePct`. The coverage check finds
+every documented response exercised except `POST /demo/faults`, recorded as excluded and asserted
+absent. The staleness header is `0` while caught up, grows past 2 with the broker down, and returns
+to `0` after.
 
 ### TRACE-001 — the trace returns the stored chain in one query → AC-047
 **Setup:** schema-valid records linked as `EVENT_CONTRACTS.md` §2 defines (OD-013): a prediction
@@ -479,6 +498,11 @@ P95 ≤ **200 ms** over 100 requests. This proves store-and-query only (see the 
 | LOAD-003 | Sustained command rate | T-04, L-06 |
 | LOAD-004 | End-to-end latency under load | **L-07 P95 ≤ 1 200 ms** |
 | LOAD-005 | Projection rebuild from 6 h telemetry | R-08 ≤ 10 min |
+
+
+**Automated 2026-10-01** — `OperationsApiTests`, beside 20 equipment × 24 h of readings: the chain,
+the two readings inside the window and not the one before it, exactly **one** SQL statement counted
+from Npgsql's `ActivitySource`, P95 within 200 ms over 100 requests.
 
 ### LOAD-001 in detail — amended 2026-09-21 by OD-005
 

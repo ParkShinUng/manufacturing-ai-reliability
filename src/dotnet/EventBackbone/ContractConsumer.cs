@@ -262,9 +262,39 @@ public sealed class ContractConsumer : IDisposable
         {
             _lag[record.TopicPartition] = Math.Max(0, watermarks.High.Value - (record.Offset.Value + 1));
         }
+
+        // Snapshots for other threads: the dictionaries above belong to this consumer's loop.
+        Interlocked.Exchange(ref _maxLag, _lag.Count == 0 ? 0 : _lag.Values.Max());
+        Interlocked.Exchange(ref _stalestNewestTicks, _newest.Values.Min().UtcTicks);
+    }
+
+    private long _maxLag;
+    private long _stalestNewestTicks;
+
+    /// <summary>The largest per-partition <see cref="Lag"/>, readable from any thread.</summary>
+    public long MaxLag => Interlocked.Read(ref _maxLag);
+
+    /// <summary>
+    /// The largest per-partition <see cref="RecordAge"/> — the partition whose newest settled record is
+    /// oldest — readable from any thread; <c>null</c> before anything is settled.
+    /// </summary>
+    public TimeSpan? MaxRecordAge
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _stalestNewestTicks);
+            return ticks == 0 ? null : _time.GetUtcNow() - new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
     }
 
     private long _lastCaughtUpTicks;
+    private bool _caughtUp;
+
+    /// <summary>
+    /// Whether this consumer's latest check found it caught up, with no record settled since. It is
+    /// what makes OD-018's "0 while caught up" true regardless of how long a check takes.
+    /// </summary>
+    public bool CaughtUp => Volatile.Read(ref _caughtUp);
 
     /// <summary>
     /// When this consumer last found itself <see cref="IsCaughtUp">caught up</see>, checked by its own
@@ -288,10 +318,36 @@ public sealed class ContractConsumer : IDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (!await ProcessOneAsync(TimeSpan.FromMilliseconds(500), cancellationToken) && IsCaughtUp(TimeSpan.FromSeconds(5)))
+            if (await ProcessOneAsync(TimeSpan.FromMilliseconds(500), cancellationToken))
             {
-                Interlocked.Exchange(ref _lastCaughtUpTicks, _time.GetUtcNow().UtcTicks);
+                // A record just arrived: until the next idle check, this consumer is not known to be current.
+                Volatile.Write(ref _caughtUp, false);
             }
+            else
+            {
+                var caughtUp = CaughtUpNow();
+                Volatile.Write(ref _caughtUp, caughtUp);
+                if (caughtUp)
+                {
+                    Interlocked.Exchange(ref _lastCaughtUpTicks, _time.GetUtcNow().UtcTicks);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A broker that does not answer the watermark query is not one this consumer can be caught up
+    /// with: <c>false</c>, so the staleness the API reports grows — rather than the loop dying.
+    /// </summary>
+    private bool CaughtUpNow()
+    {
+        try
+        {
+            return IsCaughtUp(TimeSpan.FromSeconds(5));
+        }
+        catch (KafkaException)
+        {
+            return false;
         }
     }
 

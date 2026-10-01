@@ -264,7 +264,7 @@ public sealed class LoadScenarioTests
         Assert.True(silent.Count == 0,
             $"{silent.Count} of {run.Sinks.Count} machines emitted nothing. " + string.Join(" | ", silent.Take(5).Select(x =>
                 $"#{x.Index}: connected={x.Loop.ProtocolConnected} reconnects={x.Loop.ReconnectTotal} readFailures={x.Loop.ReadFailures} " +
-                $"connectFailures={x.Loop.ConnectFailures} polls={x.Loop.PollsCompleted} last={x.Loop.LastFailure ?? "none"}")));
+                $"connectAttempts={x.Loop.ConnectAttempts} connectFailures={x.Loop.ConnectFailures} polls={x.Loop.PollsCompleted} last={x.Loop.LastFailure ?? "none"}")));
 
         foreach (var record in run.Sinks.SelectMany(s => s.Records))
         {

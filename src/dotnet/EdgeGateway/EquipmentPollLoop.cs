@@ -83,6 +83,12 @@ public sealed class EquipmentPollLoop
     public long ConnectFailures { get; private set; }
 
     /// <summary>
+    /// Connects begun, finished or not. Beside <see cref="ConnectFailures"/> and
+    /// <see cref="ProtocolConnected"/> it tells a connect that never started from one still in flight.
+    /// </summary>
+    public long ConnectAttempts { get; private set; }
+
+    /// <summary>
     /// The most recent failure, kept because <c>CODING_STANDARDS.md</c> forbids swallowed
     /// exceptions. The loop must survive a protocol fault, but an operator looking at a gateway
     /// that keeps reconnecting needs to know <b>why</b>, and a catch that records nothing turns a
@@ -174,6 +180,7 @@ public sealed class EquipmentPollLoop
 
     private async Task<bool> TryConnectAsync(CancellationToken cancellationToken)
     {
+        ConnectAttempts++;
         try
         {
             await _source.ConnectAsync(cancellationToken);

@@ -61,19 +61,25 @@ public sealed class ProjectionRebuildTests(ProjectionRig rig) : IClassFixture<Pr
 
         var original = await ProjectionRig.DumpAsync(db);
         var from = offsets[4];
-        const string before = "SELECT count(*) FROM operations.telemetry_reading_1s WHERE source_partition = $1 AND source_offset < $2";
-        var untouched = await CountAsync(db, before, from.Partition.Value, from.Offset.Value);
+        // This equipment's rows only: the class's other test writes to the same topic and partition.
+        const string before = "SELECT count(*) FROM operations.telemetry_reading_1s WHERE equipment_id = $3 AND source_partition = $1 AND source_offset < $2";
+        var untouched = await CountAsync(db, before, from.Partition.Value, from.Offset.Value, eq);
         Assert.Equal(4, untouched);
 
         for (var replay = 1; replay <= 2; replay++)
         {
             using (var admin = rig.Kafka.Admin())
             {
-                // Six readings from offset 4 on; the four before it are not touched.
-                Assert.Equal(6, await ProjectionRebuild.ReplaceFromAsync(admin, db, ConsumerGroupRegister.OperationsProjector, [from]));
+                // Exactly the rows at or after the offset, whichever equipment they belong to - six of
+                // them this test's; the four before it are not touched.
+                var inRange = await CountAsync(db,
+                    "SELECT count(*) FROM operations.telemetry_reading_1s WHERE source_partition = $1 AND source_offset >= $2",
+                    from.Partition.Value, from.Offset.Value);
+                Assert.True(inRange >= 6);
+                Assert.Equal(inRange, await ProjectionRebuild.ReplaceFromAsync(admin, db, ConsumerGroupRegister.OperationsProjector, [from]));
             }
 
-            Assert.Equal(untouched, await CountAsync(db, before, from.Partition.Value, from.Offset.Value));
+            Assert.Equal(untouched, await CountAsync(db, before, from.Partition.Value, from.Offset.Value, eq));
             Assert.Equal(4, await CountAsync(db, "SELECT count(*) FROM operations.telemetry_reading_1s WHERE equipment_id = $1", eq));
 
             using (var projector = rig.Projector(db, producer, ConsumerGroupRegister.OperationsProjector))

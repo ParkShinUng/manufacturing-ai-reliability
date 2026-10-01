@@ -40,6 +40,11 @@ public sealed class PostgresDatabase : IAsyncLifetime
 
     public NpgsqlDataSource DataSource(string database = "mair") => NpgsqlDataSource.Create(ConnectionString(database));
 
+    /// <summary>Stops the server: FAIL-DB-001 and API-001's 503. The port and data survive a restart.</summary>
+    public Task StopAsync() => _container.StopAsync();
+
+    public Task StartAsync() => InitializeAsync();
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();

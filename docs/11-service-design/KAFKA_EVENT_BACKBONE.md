@@ -32,7 +32,10 @@ Its scope is exactly those rules and nothing more:
 It also reports when it was last **caught up** (OD-018): checked by its own loop after a poll that
 returned nothing, against the high watermark of every assigned partition, using its position — or,
 before it has consumed anything there, the group's committed offset, then the reset policy. The
-Operations API's readiness gate and staleness header read that time; nothing else does.
+Operations API's readiness gate and staleness header read that time; nothing else does. Beside it,
+whether the **latest** check found it caught up with nothing settled since — the header is `0` on
+that, not on how recently a check happened to run. A broker that does not answer the check makes it
+`false`, so staleness grows during an outage instead of the loop failing.
 
 Adopting it is a condition of the phases that add consumers, not a recommendation. It is **not** a
 consumer framework: no routing, no handler registry, no configuration surface beyond the topic, the

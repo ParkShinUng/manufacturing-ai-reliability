@@ -93,7 +93,7 @@ public sealed class OpenApiHarnessTests
     public void AMalformedUuidFails_FormatIsAsserted()
     {
         var trace = """
-            {"correlationId":"not-a-uuid","window":null,"prediction":null,"decision":null,"command":null}
+            {"correlationId":"not-a-uuid","window":null,"prediction":null,"decisions":[],"commands":[]}
             """;
         Assert.Contains(Load().Check(Response("/trace/7b52009b-64fd-4a1f-9b1e-0a2f4c6d8e10", 200, "application/json", trace)), f => f.Contains("body"));
 
