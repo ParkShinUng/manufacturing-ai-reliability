@@ -20,8 +20,12 @@ node tests/contract/safety_invariants.mjs   # SC-01..SC-10 safety configuration 
 Phase 1 adds the simulator suite:
 
 ```bash
-dotnet test src/dotnet/Mair.sln
+dotnet test src/dotnet/Mair.sln -m:1
 ```
+
+`-m:1` runs the test projects one at a time, as CI does (ADR-0023 amendment, 2026-10-01): run side
+by side, the containers of the Kafka and operations suites starve the gateway's OPC UA real-path
+test.
 
 ---
 

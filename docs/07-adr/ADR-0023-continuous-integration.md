@@ -55,6 +55,20 @@ both jobs green on the first attempt — contract checks 9 s; restore, licence g
 112 s, of which the test step was 77 s. The OPC UA certificate-store code and the Testcontainers
 Kafka suites had only ever run on Windows before this.
 
+## Amendment 2026-10-01 — test projects run one at a time
+
+`dotnet test` runs a solution's test projects in parallel, one per MSBuild node. From Phase 4 that
+puts the Kafka suites' brokers, the operations suites' brokers and PostgreSQL servers, and the
+gateway's twenty OPC UA sessions on the CPU at once. The gateway's
+`Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription` then failed in two consecutive
+full runs — first no connect finished in 8 s, then connects finished and nothing was emitted — and
+passed alone (`TEST_SPECIFICATIONS.md`, known intermittent). Decided by the product owner: CI and the
+documented local command pass **`-m:1`**, one test project at a time. The cost is time, about twice
+as long; no test and no product code changes.
+
+This is a **mitigation**, not a proven cause: a starved CPU is consistent with every captured
+message and is not demonstrated by them. If the test fails with `-m:1`, the hypothesis is wrong.
+
 ## Sources
 
 - `actions/checkout` v7.0.1 — `3d3c42e5aac5ba805825da76410c181273ba90b1`

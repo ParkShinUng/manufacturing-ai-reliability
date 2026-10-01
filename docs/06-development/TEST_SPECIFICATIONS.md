@@ -267,6 +267,12 @@ session establishment (certificate validation, the secure channel handshake) not
 starved CPU; it is not proof. The loop now counts connect **attempts** too, so the next occurrence
 tells a connect never begun from one still in flight.
 
+The next full run failed it again, differently: every loop connected after one attempt and polled
+once or twice, and none emitted anything in 8 s. Alone, the test passed. **Mitigation, decided by
+the product owner 2026-10-01:** test projects run one at a time (`dotnet test ... -m:1`, CI and the
+documented command; ADR-0023 amendment). The first such run passed everything in 355 s. Still a
+mitigation: if the test fails with `-m:1`, the starved-CPU reading is wrong.
+
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
 **Trigger:** collect paired samples over 5 minutes across the full rate range, including a slew.

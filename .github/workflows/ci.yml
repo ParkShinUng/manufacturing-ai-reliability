@@ -53,4 +53,6 @@ jobs:
       - name: Licence gate
         run: node scripts/license-scan.mjs
       - run: dotnet build src/dotnet/Mair.sln --no-restore
-      - run: dotnet test src/dotnet/Mair.sln --no-build
+      # -m:1 - test projects one at a time (ADR-0023 amendment, 2026-10-01). Side by side, the
+      # Kafka and PostgreSQL containers of three suites starved the gateway's OPC UA real-path test.
+      - run: dotnet test src/dotnet/Mair.sln --no-build -m:1
