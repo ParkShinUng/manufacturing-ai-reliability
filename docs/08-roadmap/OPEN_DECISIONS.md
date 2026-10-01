@@ -1160,6 +1160,51 @@ now never deleted. Round 3: `ACCEPT`.
 
 ---
 
+# OD-022 — OPEN — a store outage would send the projector's records to the DLQ, and the store's own numbers are not numbers
+
+> Raised 2026-10-01 at the start of Phase 4 step 5 (lifecycle), comparing `OPERATIONAL_DATA.md`
+> §11–§12 with the shared consumer. Kafka semantics and failure recovery: Codex participation is
+> mandatory.
+
+## The problem
+
+**1. Two documents prescribe different behaviour for the same failure.**
+`OPERATIONAL_DATA.md` §11: when PostgreSQL is unavailable, *projections pause and resume from
+committed offsets*. `KAFKA_TOPOLOGY_AND_SEMANTICS.md` §9, implemented by the shared consumer
+(`OD-009`): a handler failure is retried **3** times with 1 s / 2 s backoff, then the record goes to
+the DLQ and its offset is committed. The projector's handler fails on every record while the store
+is down, so a three-second outage would dead-letter everything that arrived in it, commit past it,
+and leave holes in the read models that only an operator redrive could fill. §9's rule is right for
+a record the handler cannot process; it is wrong for a dependency that is briefly absent.
+
+**2. Numbers that are not numbers.** §12 says "2–3 retries" — which? — and gives a circuit breaker
+(5 consecutive failures, open 30 s) without saying what it protects. §11's "disk pressure" has no
+threshold, and nothing says how often the retention job runs.
+
+## Options for 1
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **The shared consumer distinguishes a dependency outage from a record failure.** A handler signals an outage by throwing a dedicated exception type; the consumer then does **not** count the attempt toward §9's three, does **not** commit, seeks back to the record, and retries it with capped backoff (1 s doubling to 30 s, ±20 % jitter) for as long as the outage lasts — polling throughout, so the group does not evict it. Every other exception keeps §9's rule. §9 gains one sentence; `OD-009`'s scope gains one rule | the bounded component grows by a second failure class; a handler that wrongly classifies a poison record as an outage would stall its partition — which is visible (lag, staleness) rather than silent |
+| **B** | The projector's handler retries internally until the store is back | the shared rule stays untouched, but a handler that blocks for longer than `max.poll.interval.ms` (300 s) is evicted from the group and its partitions rebalance on every long outage; and the Supervisor in Phase 6 would need its own copy of the same loop |
+| **C** | Keep §9 as is: dead-letter during an outage, redrive afterwards | contradicts §11; read models with holes after every outage; makes an operator part of normal recovery |
+
+**Recommendation: A.** Only the shared consumer polls, so only it can wait without being evicted;
+and "a dependency is down" is a fact about the world, not about the record, which is exactly what
+§9's DLQ is not for.
+
+## Proposed numbers for 2
+
+| Value | Where | Proposed |
+|---|---|---|
+| Read retries | §12 | **none** in the API: one attempt within the 3 s query timeout, `503` on failure — the client retries; a server-side retry inside a 5 s request budget only delays the answer |
+| Write retries | §12 | the projector's are option A's outage loop; no separate count |
+| Circuit breaker | §12 | on the API's database calls: after **5** consecutive connection-class failures, answer `503` immediately for **30 s**, then let one request through to probe |
+| Retention job | §11, §15 | runs at start and every **hour**; drops each partition whose upper bound is older than its table's retention; `equipment_decommission` never |
+| Disk pressure | §11 | **dropped from Phase 4**: nothing measures it, and dropping data on a guessed threshold is worse than the retention job's fixed rule. Phase 8 (observability) owns a disk metric and its alert |
+
+---
+
 ## Found while writing OD-011–018, and fixed directly
 
 `FaultInjectionRequest.profile` in the OpenAPI contract listed ten profiles. `OD-001` added
