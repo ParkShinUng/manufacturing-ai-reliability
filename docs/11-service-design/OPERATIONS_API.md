@@ -145,6 +145,26 @@ Stateless; projectors resume from offsets.
 ## 15. Configuration
 `PROFILE` (local|demo|production-like), DB/Kafka connections, page limits, auth settings.
 
+**As implemented (Phase 4 step 5, 2026-10-02).** Standard .NET configuration — environment variables
+use `__` for `:`. Startup fails, naming the key, if a required one is missing.
+
+| Key | Required | Meaning |
+|---|---|---|
+| `Mair:Profile` | no, default `local` | `local`, `demo` or `production-like`. Phase 4 serves the same routes in every profile; the demo route arrives in Phase 11 |
+| `ConnectionStrings:Operations` | **yes** | Npgsql connection string. The service sets `Command Timeout` to **3 s** whatever it says (§12) |
+| `Mair:Kafka:BootstrapServers` | **yes** | the brokers the projector and the health probe use |
+| `Mair:Contracts` | **yes** | the directory of the contract schemas, `contracts/jsonschema/v1` |
+| `Mair:Tokens:PublicKeyFiles` | **yes** | one or more public ES256 JWK files (OD-017); a private key here fails startup |
+| `Mair:Tokens:Issuer` | no, default `mair-local-issuer` | the `iss` accepted |
+| `ASPNETCORE_URLS` | no | where Kestrel listens |
+
+Page limits are **not** configuration: `limit` is 1–500, default 100, in the contract itself.
+
+**Startup order.** Migrate the `operations` schema (OD-016) — a failure stops the process before it
+listens — then start the projector, then serve. The readiness gate (OD-018) answers `503` until
+every projector has caught up once. The service never creates topics: the topic bootstrap
+(`AC-026`) is a separate job, and until the topics exist the projector waits and the gate stays shut.
+
 ## 16. Security
 Bearer JWT (OD-017): **ES256**, validated against configured public key files — the API holds **no**
 signing key. `iss` `mair-local-issuer` locally, the environment's issuer otherwise; `aud`

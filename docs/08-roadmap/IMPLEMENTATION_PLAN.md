@@ -199,6 +199,11 @@ the read-model rebuild is Phase 4 (OD-007).
 >    and now reads `0` while the latest check found it caught up; and a list query missed a line break
 >    between two SQL fragments. The readiness gate (OD-018) is in, as the route's precondition.
 > 5. **Lifecycle** — readiness gate, retention job, PostgreSQL outage behaviour (`FAIL-DB-001`).
+>    **In progress.** The host is done (2026-10-02): configuration keys in `OPERATIONS_API.md` §15,
+>    migration before listening, the projector as a background service, the readiness gate —
+>    `OperationsHostTests`. The retention job and outage behaviour wait for **OD-022**: the
+>    projector's handler failures would send a store outage's records to the DLQ, contradicting
+>    `OPERATIONAL_DATA.md` §11, and Codex's mandatory challenge of it stopped at a usage limit.
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.
 **Proof:** **AC-047** (trace store-and-query, OD-011), AC-028, AC-029, AC-030, **AC-046** (read
