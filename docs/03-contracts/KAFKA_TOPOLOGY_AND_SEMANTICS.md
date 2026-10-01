@@ -16,15 +16,15 @@ Pattern: `factory.<aggregate-plural>.v<major>`
 
 ## 2. Topic register
 
-| Topic | Producer | Consumers | Key | Partitions | RF (local / prod-like) | Retention | Cleanup |
-|---|---|---|---|---|---|---|---|
-| `factory.telemetry.v1` | edge-gateway | feature-builder, operations-projector, shadow-feature-builder | `equipmentId` | **12** | 1 / 3 | **6 h** | delete |
-| `factory.predictions.v1` | prediction-service | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **24 h** | delete |
-| `factory.safety-decisions.v1` | safety-supervisor | operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | delete |
-| `factory.control-outcomes.v1` | control-service | operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | delete |
-| `factory.equipment-states.v1` | edge-gateway | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **∞** | compact |
-| `factory.model-deployments.v1` | mlops-publisher | safety-supervisor, operations-projector | `modelName` | **1** | 1 / 3 | **∞** | compact |
-| `factory.faults.v1` | equipment-simulator | operations-projector | `equipmentId` | **3** | 1 / 3 | **7 d** | delete |
+| Topic | Producer | Consumers | Key | Partitions | RF (local / prod-like) | Retention | Cleanup | Tombstones |
+|---|---|---|---|---|---|---|---|---|
+| `factory.telemetry.v1` | edge-gateway | feature-builder, operations-projector, shadow-feature-builder | `equipmentId` | **12** | 1 / 3 | **6 h** | delete | no |
+| `factory.predictions.v1` | prediction-service | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **24 h** | delete | no |
+| `factory.safety-decisions.v1` | safety-supervisor | operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | delete | no |
+| `factory.control-outcomes.v1` | control-service | operations-projector | `equipmentId` | **12** | 1 / 3 | **7 d** | delete | no |
+| `factory.equipment-states.v1` | edge-gateway | safety-supervisor, operations-projector | `equipmentId` | **12** | 1 / 3 | **∞** | compact | **yes** (OD-021) |
+| `factory.model-deployments.v1` | mlops-publisher | safety-supervisor, operations-projector | `modelName` | **1** | 1 / 3 | **∞** | compact | no |
+| `factory.faults.v1` | equipment-simulator | operations-projector | `equipmentId` | **3** | 1 / 3 | **7 d** | delete | no |
 
 `factory.control-outcomes.v1` and `factory.equipment-states.v1` are **new in v0.3** — ADR-0009 and
 `SYSTEM_ARCHITECTURE.md` §7 both required them but neither defined them (GAP-008).
@@ -151,6 +151,14 @@ producer — writes a **tombstone** (a null value under the equipment's key) whe
 its configured inventory. Without it, "read the topic in full" eventually reports machines that no
 longer exist.
 
+**This is the only topic that allows tombstones** — the register's *Tombstones* column, mirrored by
+`TopicSpec` in code, which is what the shared consumer reads (OD-021). On every other topic a null
+value is an invalid record (§9).
+
+A tombstone's **timestamp** is the Kafka record's `CreateTime` — the broker default, not overridden by
+the bootstrap — set by the gateway when it produces the tombstone: the moment the gateway decided the
+equipment had left its inventory. It is stored in the log, so a replay reads it back unchanged.
+
 Auto-commit is forbidden because it commits offsets for records that may not have been processed,
 which converts at-least-once into silent at-most-once on a crash.
 
@@ -164,7 +172,7 @@ A duplicate is defined **per topic**, so consumers do not have to guess:
 | `factory.predictions.v1` | `predictionId` |
 | `factory.safety-decisions.v1` | `decisionId` |
 | `factory.control-outcomes.v1` | `commandId` |
-| `factory.equipment-states.v1` | `(equipmentId, gatewayEpoch, stateSequence)` — the epoch is what makes a restarted counter safe (OD-008) |
+| `factory.equipment-states.v1` | state records: `(equipmentId, gatewayEpoch, stateSequence)` — the epoch is what makes a restarted counter safe (OD-008). **Tombstones** carry no payload, so their identity is the record itself: `(topic, partition, offset)` (OD-021). That makes a redelivery of one tombstone a duplicate; two tombstones at different offsets are two records, even for one equipment |
 | `factory.model-deployments.v1` | `(partitionKey, modelVersion, authorizationSequence)`; WATERMARK records use the sentinel key `__watermark__` so liveness records compact to one retained row and never displace a model's authorization |
 | `factory.faults.v1` | `faultInjectionId` |
 
@@ -199,6 +207,11 @@ detectable. A gateway-assigned sequence would be continuous even when the gatewa
 **Poison-message rule:** a record that fails **schema validation** goes to the DLQ on the *first*
 attempt with no retry — retrying a structurally invalid record cannot succeed and only delays the
 consumer.
+
+**Tombstones (OD-021):** on a topic whose register entry allows tombstones, a null value is passed
+to the consumer's **tombstone handler** — processed in offset order, retried and dead-lettered by
+the same rules as any handler failure, committed after it settles. On any other topic a null value
+is `Unparseable`: DLQ on the first attempt.
 
 **Safety-critical exception:** the Safety Supervisor does **not** DLQ-and-continue on a prediction it
 cannot parse. It rejects the recommendation (`PREDICTION_UNPARSEABLE`), leaves the equipment in its

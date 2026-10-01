@@ -338,6 +338,16 @@ redrives automatically · the following valid record is processed, proving the c
 **Negative case, required:** a valid record must **not** reach the DLQ. Without it, a component that
 DLQ'd everything would pass.
 
+### KAFKA-003 — a tombstone is a record only where the contract says so → AC-027 *(added 2026-10-01, OD-021)*
+**Setup:** a real broker; one topic whose register entry allows tombstones and one that does not;
+consumers on the shared component.
+**Trigger:** produce a null value to each; then a tombstone whose handler fails on every attempt.
+**Assert:** on the allowing topic the tombstone handler runs once and the offset commits after it ·
+on the other topic the null value is DLQ'd on the **first** attempt as `Unparseable` with the full
+header set, and no handler runs · a failing tombstone handler is retried on §9's schedule and DLQ'd
+after the third attempt as `HandlerFailed` · constructing a consumer with a tombstone handler for a
+topic that does not allow tombstones fails.
+
 **Automated 2026-09-29** — `ContractConsumerTests`, real broker, the production `ContractConsumer`.
 Beyond the specification above it also asserts that an **unparseable** record is DLQ'd rather than
 crashing the consumer (ADR-0022 condition 5), that a handler failure is retried on §9's 1 s / 2 s
@@ -391,7 +401,11 @@ a partition only when its **upper bound** is older than the table's retention (9
 outcomes, 1 y mode history), never one that still holds a record inside it (OD-018) · a range
 rebuild (`PROJ-001`) leaves audit rows **outside** the replayed range untouched, so history past
 Kafka's 7 d survives it (OD-014) · a control outcome with `modeTransitionId` and no `fromMode` is
-DLQ'd, not stored (the contract, via the shared component).
+DLQ'd, not stored (the contract, via the shared component) · an equipment-state **tombstone** keeps
+the equipment's history, adds one `equipment_decommission` row, and removes the equipment from the
+current view; a later state record for it restores it; a redelivered tombstone changes nothing; and
+a retained range holding a state record, a tombstone and a later state record, projected into a
+fresh store, gives a byte-identical canonical dump and the same current view (OD-021).
 
 ### API-001 — every response the API gives validates against the contract → AC-030
 **Setup:** the Operations API on the projected store of PROJ-002, an ES256 key pair minted by

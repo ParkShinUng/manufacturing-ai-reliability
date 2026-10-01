@@ -24,7 +24,10 @@ Its scope is exactly those rules and nothing more:
 - a schema-invalid record goes to `<topic>.dlq` on the **first** attempt, with no retry;
 - every required DLQ header is set;
 - the source offset is committed **only after** the DLQ produce succeeds;
-- **no** automatic redrive — that is operator-initiated (§9).
+- **no** automatic redrive — that is operator-initiated (§9);
+- a **tombstone** goes to the consumer's tombstone handler only on a topic whose register entry
+  allows one, and is an invalid record everywhere else (OD-021, added 2026-10-01 — a rule from the
+  contract, `OD-008`, not from a consumer's convenience).
 
 Adopting it is a condition of the phases that add consumers, not a recommendation. It is **not** a
 consumer framework: no routing, no handler registry, no configuration surface beyond the topic, the

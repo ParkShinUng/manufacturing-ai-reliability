@@ -37,6 +37,7 @@ semantics and the tables must not diverge from them.
 | `safety_decision` | `operations` · operations-projector | within 7 d |
 | `control_outcome` | `operations` · operations-projector | within 7 d |
 | `equipment_state_history` | `operations` · operations-projector | **no** — the topic is compacted; only each equipment's latest state is replayable |
+| `equipment_decommission` | `operations` · operations-projector | **no** — compaction removes a tombstone after `delete.retention.ms`; audit (OD-021) |
 | `fault_injection` | `operations` · operations-projector | within 7 d — **not yet created**: `factory.faults.v1` has no contract (OD-020) |
 | `model_deployment` | `operations` · operations-projector | latest per model only (compacted) |
 | `authorization_watermark` | `operations` · operations-projector | latest only (compacted); one row, the newest `WATERMARK` record |
@@ -84,6 +85,24 @@ are deterministic — a replay reads the same offsets.
 Projector consumes → upserts idempotently by the topic's duplicate identity → commits offset.
 Idempotent upsert is what makes at-least-once delivery harmless here.
 
+**Tombstones on `factory.equipment-states.v1`** (OD-021) go to `equipment_decommission` — one row
+**per tombstone record**, not per decommissioning episode: a redelivery is the same row, a second
+tombstone at another offset is a second row. History is never deleted.
+
+| Column | Type | Source |
+|---|---|---|
+| `equipment_id` | `text NOT NULL` | the record key |
+| `decommissioned_at_utc` | `timestamptz NOT NULL` | the record's Kafka `CreateTime`, set by the gateway when it decided the equipment left its inventory (`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §6); stored in the log, so a replay reads it back unchanged |
+| `source_topic`, `source_partition`, `source_offset` | `text`, `integer`, `bigint`, all `NOT NULL` | provenance — and the primary key, since a tombstone's identity is the record (§7 of the topology) |
+
+Indexed on `(equipment_id, source_offset)` for the current view. Not partitioned, and **never
+deleted**: it is an input to the current view as well as audit, and a deleted decommission would
+let an older state record that outlived it — monthly partitions drop up to a month late — make the
+equipment current again. One row per decommissioning is bounded by the inventory. Created by
+migration `0002`. An equipment is **current** when its newest state
+record is at a later offset than its newest tombstone; both share its key and so its partition, which
+makes the offsets comparable. An equipment that reappears is current again.
+
 `telemetry_reading_1s` (OD-015): key `(equipment_id, second_utc)`, `second_utc` = `eventTimeUtc`
 truncated to the second. The stored reading is the one with the greatest `(eventTimeUtc, sequence)`,
 and an upsert replaces it only with a greater one, so the result depends on which records exist and
@@ -108,7 +127,7 @@ Projector batches up to 500 records or 1 s; bounded in-flight.
 Projections resume from offsets; a full rebuild is an operator action with a documented runbook.
 
 ## 15. Configuration
-Retention: per-second readings 30 d, predictions 30 d, decisions/outcomes 90 d, mode history 1 y,
+Retention: per-second readings 30 d, decommissions indefinite (an input to the current view), predictions 30 d, decisions/outcomes 90 d, mode history 1 y,
 `control_state` indefinite.
 
 ## 16. Security

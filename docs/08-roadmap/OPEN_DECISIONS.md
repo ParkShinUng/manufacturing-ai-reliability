@@ -1052,7 +1052,7 @@ defines **M1–M10**.
 
 ---
 
-# OD-020 — OPEN — `factory.faults.v1` has a projection table and no contract
+# OD-020 — RESOLVED 2026-10-01 — option A — `factory.faults.v1` has a projection table and no contract
 
 > Raised 2026-10-01 in Phase 4 step 2, while deriving the `operations` tables from the contracts.
 
@@ -1076,9 +1076,16 @@ the simulator's fault events are demo-profile work (Phase 11) and have never bee
 **Recommendation: A.** No producer, no record and no consumer need it before Phase 11, and the
 `OD-011` precedent is that a contract is written by the phase that can test it end to end.
 
+## Decision — A, confirmed by the product owner (2026-10-01)
+
+Codex: `SOUND` (`reviews/phase-4/CODEX_OD-020-021_CHALLENGE_raw.md`). Its three conditions restate
+the decision and are kept: no `fault_injection` table or projector subscription in Phase 4;
+`OPERATIONAL_DATA.md` §7 marks the table deferred; Phase 11 adds the schema, an example, the
+producer, the projection and their tests together.
+
 ---
 
-# OD-021 — OPEN — the shared consumer dead-letters a tombstone, and the contract says tombstones are legitimate
+# OD-021 — RESOLVED 2026-10-01 — option A — the shared consumer dead-letters a tombstone, and the contract says tombstones are legitimate
 
 > Raised 2026-10-01 in Phase 4 step 2. A Phase 3 defect that could not surface before: Phase 3 had
 > no consumer of `factory.equipment-states.v1`.
@@ -1106,6 +1113,43 @@ with one.
 
 **Recommendation: A.** The tombstone is part of the contract, so the contract-enforcing component is
 where it belongs. Deleting history on a tombstone would destroy audit records `AC-029` must keep.
+
+## Decision — A, with Codex's conditions, confirmed by the product owner (2026-10-01)
+
+Codex: `SOUND_WITH_CONDITIONS`. Each condition, and where it is now written:
+
+1. **The allowance is topic metadata, not a name check.** The topic register gains a *Tombstones*
+   column, `yes` only for `factory.equipment-states.v1` (`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §2, §9),
+   mirrored by `TopicSpec` in code. A consumer given a tombstone handler for a topic whose register entry does not allow
+   tombstones fails at construction.
+2. **Everywhere else a null value is still invalid**: `Unparseable`, first attempt, full header set
+   (§9). Only on an allowing topic does the shared component pass it to the **tombstone handler**,
+   with the handler-failure rules any handler has — three attempts, then the DLQ with
+   `x-dlq-error-class: HandlerFailed` and every source header.
+3. **The projection's shape** (`OPERATIONAL_DATA.md` §7, §10): history is **kept** — it is audit
+   (`AC-029`). A tombstone is stored in its own table, `equipment_decommission` — shape in
+   `OPERATIONAL_DATA.md` §10 — keyed by its provenance: a tombstone has no payload, so the record is
+   its identity (topology §7, amended), one row per tombstone record. `decommissioned_at_utc` is the
+   record's `CreateTime`, set by the gateway and stored in the log, so the same on every replay. An equipment is **current** when its newest state record
+   is at a later offset than its newest tombstone; both share the equipment's key, so they share a
+   partition and their offsets are comparable. An equipment that reappears is current again.
+4. **The Supervisor uses the same component and the same rule** in Phase 6: a tombstone removes the
+   equipment from its current-state view (`SAFETY_SUPERVISOR.md` startup step 3).
+5. **Replay and DLQ**: a tombstone is processed in offset order and committed after its handler
+   settles, like any record. Compaction removes a tombstone after the topic's `delete.retention.ms`,
+   so like the history it is not rebuildable past that — and `equipment_decommission` is audit.
+6. **Tests** (`TEST_SPECIFICATIONS.md`): `KAFKA-003` for the component — allowed tombstone handled,
+   disallowed tombstone DLQ'd, tombstone handler failure DLQ'd after three attempts, construction
+   refused for a non-allowing topic; `AUDIT-001` for the projection — history kept, current view
+   excludes, reappearance restores, and a retained range rebuilt into a fresh store gives the same
+   canonical dump. The Supervisor's adoption is tested in Phase 6.
+
+Verified by Codex after it was written down (`reviews/phase-4/CODEX_OD-021_VERIFY_raw.md`): round 1
+`REVISE` — the register had no tombstone column, §7's identity did not cover tombstones, the table had
+no defined shape, the timestamp type was not pinned, and replay determinism was claimed but not
+tested. All five applied. Round 2 found one more (P1): a 1 y retention on `equipment_decommission`
+could resurrect an equipment whose last state row outlived the deleted decommission. The table is
+now never deleted. Round 3: `ACCEPT`.
 
 ---
 
