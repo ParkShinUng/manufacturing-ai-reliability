@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OperationsService\Mair.OperationsService.csproj" />
+    <!-- The Kafka broker fixture, on the image ADR-0021 pins - one definition, not a copy. -->
+    <ProjectReference Include="..\EventBackbone.Tests\Mair.EventBackbone.Tests.csproj" />
   </ItemGroup>
 
 </Project>

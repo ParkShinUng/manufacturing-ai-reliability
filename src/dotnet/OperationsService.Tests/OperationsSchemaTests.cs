@@ -12,7 +12,7 @@ public sealed class OperationsSchemaTests(PostgresDatabase postgres) : IClassFix
 {
     private static readonly string[] ProjectionTables =
     [
-        "authorization_watermark", "control_outcome", "equipment_state_history", "model_deployment",
+        "authorization_watermark", "control_outcome", "equipment_decommission", "equipment_state_history", "model_deployment",
         "prediction", "safety_decision", "telemetry_reading_1s",
     ];
 
@@ -51,7 +51,8 @@ public sealed class OperationsSchemaTests(PostgresDatabase postgres) : IClassFix
     public async Task TheEmbeddedMigrationsCreateTheProjectionTables_AndNoFaultTableYet()
     {
         await using var db = await MigratedAsync();
-        // fault_injection waits for factory.faults.v1 to have a contract (OD-020).
+        // fault_injection waits for factory.faults.v1 to have a contract (OD-020); equipment_decommission
+        // arrives in migration 0002 (OD-021) - forward-only, so a second file, not an edited first.
         Assert.Equal(ProjectionTables, await LogicalTablesAsync(db));
     }
 

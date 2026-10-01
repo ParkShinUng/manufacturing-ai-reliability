@@ -179,6 +179,15 @@ the read-model rebuild is Phase 4 (OD-007).
 >    consumer dead-letters the equipment-state tombstones `OD-008` made legitimate (**OD-021**).
 > 3. **The projector** — one consumer per topic on the shared `ContractConsumer`, idempotent upserts,
 >    range rebuild — `PROJ-001`, `PROJ-002`, the storage half of `AUDIT-001`.
+>    **Done 2026-10-01**, after `OD-020` and `OD-021`. Three defects were found on the way, each by a
+>    test before anything depended on it: the shared consumer dead-lettered the tombstones `OD-008`
+>    made legitimate (now `KAFKA-003`); the caught-up check called a restarted consumer with
+>    committed offsets and nothing new to read "behind" forever, because it has no position until it
+>    consumes (it now falls back to the committed offset, then the reset policy); and the prediction
+>    and decision examples still carried a telemetry record's correlation ID, which `OD-013` had
+>    ruled out. Polling the six consumers in turn from one thread made the group take minutes to
+>    settle — consistent with the classic protocol needing every member to poll during a rebalance,
+>    not proven — so each consumer now runs its own loop, as production does.
 > 4. **The Operations API** — authentication, rate limit, staleness, every route — `API-001`,
 >    `TRACE-001`, the query half of `AUDIT-001`.
 > 5. **Lifecycle** — readiness gate, retention job, PostgreSQL outage behaviour (`FAIL-DB-001`).

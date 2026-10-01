@@ -29,6 +29,11 @@ Its scope is exactly those rules and nothing more:
   allows one, and is an invalid record everywhere else (OD-021, added 2026-10-01 — a rule from the
   contract, `OD-008`, not from a consumer's convenience).
 
+It also reports when it was last **caught up** (OD-018): checked by its own loop after a poll that
+returned nothing, against the high watermark of every assigned partition, using its position — or,
+before it has consumed anything there, the group's committed offset, then the reset policy. The
+Operations API's readiness gate and staleness header read that time; nothing else does.
+
 Adopting it is a condition of the phases that add consumers, not a recommendation. It is **not** a
 consumer framework: no routing, no handler registry, no configuration surface beyond the topic, the
 schema and the handler.

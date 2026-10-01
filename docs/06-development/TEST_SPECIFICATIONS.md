@@ -169,6 +169,13 @@ its pre-replay dump · only rows whose provenance lies in the replayed range are
 outside it are untouched (OD-014) · the rebuild is idempotent under a second replay of the same
 range · no projection writes outside its own tables.
 
+
+**Automated 2026-10-01** — `ProjectionRebuildTests`, real broker and PostgreSQL 18.6, the registered
+group `cg.operations-projector.v1` on a rig of its own. Ten readings; a rebuild from the fifth
+deletes exactly six rows, leaves the four before it untouched, and the replay restores a canonical
+dump equal to the original — twice in a row. The Supervisor's group is refused and nothing is
+deleted.
+
 ### FAIL-MODEL-001 — quarantine propagation → AC-033 *(new)*
 **Trigger:** quarantine the running model in MLflow.
 **Assert:** `ModelAuthorization` published with `acks=all` **before** the registry transition reports
@@ -243,6 +250,14 @@ the run passed, and the duration is recorded, not explained.
 
 If it recurs, the assertion names each silent machine with its connect, reconnect, read-failure and
 poll counts and its last failure, and CI logs print it in full.
+
+**Recurred 2026-10-01**, once, in the first full run after Phase 4 step 3 added the operations
+suites — two more brokers and five PostgreSQL containers in parallel with the gateway's OPC UA tests.
+`Ac001_TwentyMachinesEmitCanonicalTelemetryOverTheOpcUaSubscription` failed; **its message was not
+captured**, because the command filtered for test names only — the same mistake as the first
+occurrence. The next full run passed. A further pair of runs was stopped by the host for low memory
+before finishing, so no more is known. The added containers are consistent with the contention
+hypothesis and do not prove it.
 
 ### OT-002 — cross-protocol agreement → AC-021
 **Setup:** the same equipment exposed on **both** OPC UA and Modbus; gateway reads both.
@@ -372,6 +387,10 @@ its contract before it is produced — to the **real** topics, through the real 
 PostgreSQL. That proves what Phase 4 owns: storage, rebuild and query. It does **not** prove that
 the later producers link up; that claim is the live-chain criterion, verified in Phase 7 (OD-011).
 
+
+**Automated 2026-10-01** — `TombstoneTests`, real broker, topics of their own per test: the four
+assertions above, plus the register allowing tombstones on `factory.equipment-states.v1` alone.
+
 ### PROJ-002 — a projection rebuilt into an empty store equals the original → AC-028
 **Setup:** real broker and PostgreSQL 18.6; a fixture stream on every projected topic, including,
 for `factory.telemetry.v1`: a **duplicate** delivery of one record, two records in the same second
@@ -386,6 +405,11 @@ value is not derived from the record or its offset — checked against the catal
 inspection: no sequence, no default calling `now()`, no generated identity (OD-014) · the dump of the
 same rows is identical from sessions with different `DateStyle`, `TimeZone` and
 `extra_float_digits` (ADR-0024 B6).
+
+
+**Automated 2026-10-01** — `ProjectionTests` (the stream into two databases, dumps equal, the
+per-second winner, its duplicate and its late record) and `OperationsSchemaTests` (the catalogue
+checks, with a positive control: the same query does find the migration history's `now()` default).
 
 ### AUDIT-001 — audit records are retained and queryable → AC-029
 **Setup:** as PROJ-002, with schema-valid safety decisions and control outcomes for two equipment
@@ -406,6 +430,12 @@ the equipment's history, adds one `equipment_decommission` row, and removes the 
 current view; a later state record for it restores it; a redelivered tombstone changes nothing; and
 a retained range holding a state record, a tombstone and a later state record, projected into a
 fresh store, gives a byte-identical canonical dump and the same current view (OD-021).
+
+
+**Storage half automated 2026-10-01** — `ProjectionTests`: a tombstone keeps history, adds one
+decommission row and empties the current view; a later state restores it; a re-read tombstone adds
+nothing; a fresh store gives the same dump; a mode transition is stored with `fromMode`, and one
+without it is DLQ'd. The query half (paging, ranges) and the retention job are steps 4 and 5.
 
 ### API-001 — every response the API gives validates against the contract → AC-030
 **Setup:** the Operations API on the projected store of PROJ-002, an ES256 key pair minted by

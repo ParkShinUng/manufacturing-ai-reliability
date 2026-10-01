@@ -62,7 +62,9 @@ assets of its own and pulls in GDS and complex-type assemblies neither service n
 
 Accepted 2026-10-01, referenced the same day by `OperationsService` and its tests when Phase 4
 started; ADR-0024's group B conditions were checked against them first. Licence scan of the whole
-graph: **61 packages, all permissive** (59 by metadata, 2 by recorded evidence).
+graph: **58 packages, all permissive** (56 by metadata, 2 by recorded evidence). It was 61 when
+step 1 ran; step 3 made the operations tests reference the Kafka test fixtures, which unified
+`Microsoft.Extensions.*` 10.0.0 and 10.0.8 onto 10.0.8 - the same effect as Phase 3's 50 → 47.
 
 | Component | Package / image | Version | Licence |
 |---|---|---|---|

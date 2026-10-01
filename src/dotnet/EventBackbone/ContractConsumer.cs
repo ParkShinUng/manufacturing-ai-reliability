@@ -12,7 +12,8 @@ namespace Mair.EventBackbone;
 /// <c>&lt;topic&gt;.dlq</c> on the <b>first</b> attempt · a handler failure is retried up to
 /// <see cref="MaxAttempts"/> times with the §9 backoff, then DLQ'd · every required DLQ header is
 /// set · the source offset is committed only <b>after</b> the DLQ produce succeeds · nothing is
-/// redriven automatically.
+/// redriven automatically · a tombstone is a record only on a topic whose register entry allows one
+/// (<c>OD-021</c>), and goes to the tombstone handler under the same retry and DLQ rules.
 /// </para>
 /// <para>
 /// It is deliberately not a framework: no routing, no handler registry, no configuration beyond the
@@ -32,9 +33,11 @@ public sealed class ContractConsumer : IDisposable
     private readonly IProducer<string, byte[]> _deadLetters;
     private readonly ContractSchema _schema;
     private readonly Func<ConsumeResult<string, byte[]>, CancellationToken, Task> _handler;
+    private readonly Func<ConsumeResult<string, byte[]>, CancellationToken, Task>? _tombstoneHandler;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly Func<double> _jitter;
     private readonly TimeProvider _time;
+    private readonly bool _resetToLatest;
 
     public ContractConsumer(
         ConsumerConfig config,
@@ -45,7 +48,9 @@ public sealed class ContractConsumer : IDisposable
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         Func<double>? jitter = null,
         TimeProvider? time = null,
-        bool seekToEndOnAssignment = false)
+        bool seekToEndOnAssignment = false,
+        Func<ConsumeResult<string, byte[]>, CancellationToken, Task>? tombstoneHandler = null,
+        TopicSpec? spec = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentException.ThrowIfNullOrWhiteSpace(topic);
@@ -57,9 +62,26 @@ public sealed class ContractConsumer : IDisposable
         _schema = schema;
         _deadLetters = deadLetters;
         _handler = handler;
+
+        // OD-021: whether a null value is a record is the topic's property, read from the register
+        // (or the spec given for a topic outside it), never inferred from the name.
+        var allowsTombstones = (spec ?? TopicRegister.Find(topic))?.AllowsTombstones ?? false;
+        if (tombstoneHandler is not null && !allowsTombstones)
+        {
+            throw new ArgumentException($"{topic} does not allow tombstones, so it cannot have a tombstone handler", nameof(tombstoneHandler));
+        }
+
+        if (tombstoneHandler is null && allowsTombstones)
+        {
+            // Dead-lettering a legitimate decommissioning is the defect OD-021 exists to prevent.
+            throw new ArgumentException($"{topic} allows tombstones; a consumer of it must say what one means", nameof(tombstoneHandler));
+        }
+
+        _tombstoneHandler = tombstoneHandler;
         _delay = delay ?? Task.Delay;
         _jitter = jitter ?? Random.Shared.NextDouble;
         _time = time ?? TimeProvider.System;
+        _resetToLatest = config.AutoOffsetReset == AutoOffsetReset.Latest;
         var builder = new ConsumerBuilder<string, byte[]>(Harden(config));
 
         if (seekToEndOnAssignment)
@@ -111,6 +133,51 @@ public sealed class ContractConsumer : IDisposable
 
     public long Processed { get; private set; }
 
+    /// <summary>Partitions currently assigned to this consumer by its group.</summary>
+    public int AssignedPartitions => _consumer.Assignment.Count;
+
+    /// <summary>
+    /// <b>Caught up</b>, as <c>OD-018</c> defines it: the consumer holds an assignment, and on every
+    /// assigned partition it has settled — handled or dead-lettered, and committed — every record
+    /// below the high watermark the broker reports now. Queries the broker; not for the hot path.
+    /// </summary>
+    public bool IsCaughtUp(TimeSpan timeout)
+    {
+        var assignment = _consumer.Assignment;
+        if (assignment.Count == 0)
+        {
+            return false;
+        }
+
+        var committed = _consumer.Committed(assignment, timeout).ToDictionary(c => c.TopicPartition, c => c.Offset);
+        foreach (var partition in assignment)
+        {
+            var watermarks = _consumer.QueryWatermarkOffsets(partition, timeout);
+
+            // Where this consumer will read next: its position once it has consumed here; before
+            // that, the group's committed offset - a restarted consumer with nothing new to read has
+            // no position at all; and with neither, where the reset policy starts it. The low
+            // watermark matters on a compacted topic, whose first offset need not be 0.
+            var next = _consumer.Position(partition);
+            if (next == Offset.Unset)
+            {
+                next = committed.GetValueOrDefault(partition, Offset.Unset);
+            }
+
+            if (next == Offset.Unset)
+            {
+                next = _resetToLatest ? watermarks.High : watermarks.Low;
+            }
+
+            if (next.Value < watermarks.High.Value)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// The settings §6 and ADR-0021 B6 require, applied whatever the caller passed. A consumer that
     /// could be configured into auto-commit is a consumer that could silently become at-most-once.
@@ -151,15 +218,31 @@ public sealed class ContractConsumer : IDisposable
             return false;
         }
 
-        var verdict = _schema.Validate(record.Message.Value);
-        if (!verdict.Valid)
+        if (record.Message.Value is null)
         {
-            // First attempt, no retry: a structurally invalid record cannot become valid (§9).
-            await DeadLetterAsync(record, verdict.Rejection!.Value, verdict.Reason, attempts: 1, _time.GetUtcNow());
+            if (_tombstoneHandler is not null)
+            {
+                await HandleAsync(record, _tombstoneHandler, cancellationToken);
+            }
+            else
+            {
+                // Not JSON at all, on a topic whose contract has no use for a null: first attempt (§9).
+                await DeadLetterAsync(record, RejectionClass.Unparseable,
+                    "null value: a tombstone on a topic whose register entry allows none", attempts: 1, _time.GetUtcNow());
+            }
         }
         else
         {
-            await HandleAsync(record, cancellationToken);
+            var verdict = _schema.Validate(record.Message.Value);
+            if (!verdict.Valid)
+            {
+                // First attempt, no retry: a structurally invalid record cannot become valid (§9).
+                await DeadLetterAsync(record, verdict.Rejection!.Value, verdict.Reason, attempts: 1, _time.GetUtcNow());
+            }
+            else
+            {
+                await HandleAsync(record, _handler, cancellationToken);
+            }
         }
 
         _consumer.Commit(record);
@@ -181,15 +264,39 @@ public sealed class ContractConsumer : IDisposable
         }
     }
 
+    private long _lastCaughtUpTicks;
+
+    /// <summary>
+    /// When this consumer last found itself <see cref="IsCaughtUp">caught up</see>, checked by its own
+    /// loop after a poll that returned nothing; <c>null</c> until it first is. Readable from any
+    /// thread: the readiness gate and the staleness header (<c>OD-018</c>) are built on it.
+    /// </summary>
+    public DateTimeOffset? LastCaughtUpUtc
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _lastCaughtUpTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
+
+    /// <summary>
+    /// The consumer's own loop. A consumer is polled by one thread only — this one — so the
+    /// caught-up check, which asks the client for its assignment and positions, runs here too.
+    /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await ProcessOneAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
+            if (!await ProcessOneAsync(TimeSpan.FromMilliseconds(500), cancellationToken) && IsCaughtUp(TimeSpan.FromSeconds(5)))
+            {
+                Interlocked.Exchange(ref _lastCaughtUpTicks, _time.GetUtcNow().UtcTicks);
+            }
         }
     }
 
-    private async Task HandleAsync(ConsumeResult<string, byte[]> record, CancellationToken cancellationToken)
+    private async Task HandleAsync(
+        ConsumeResult<string, byte[]> record, Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         DateTimeOffset? firstFailure = null;
 
@@ -197,7 +304,7 @@ public sealed class ContractConsumer : IDisposable
         {
             try
             {
-                await _handler(record, cancellationToken);
+                await handler(record, cancellationToken);
                 return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

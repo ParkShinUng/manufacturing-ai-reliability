@@ -171,7 +171,7 @@ safety-required. No value is fabricated.
     "oodScore": 0.12,
     "recommendedOperationRatePct": 70.0
   },
-  "correlationId": "9c1f6d2a-7b3e-4a51-8f2d-2c4b6e8a0d11",
+  "correlationId": "4d8b2f6a-91c3-4e57-a2d0-6b1e9c7f3a58",
   "causationId": "0f1e2d3c-4b5a-4698-8877-665544332211"
 }
 ```
@@ -220,7 +220,7 @@ swallowed (GAP-033).
     "baselineOperationRatePct": 100.0,
     "rateBudgetRemainingPp": 15.0
   },
-  "correlationId": "9c1f6d2a-7b3e-4a51-8f2d-2c4b6e8a0d11",
+  "correlationId": "4d8b2f6a-91c3-4e57-a2d0-6b1e9c7f3a58",
   "causationId": "c9b8a7d6-1234-4e5f-9a8b-7c6d5e4f3a21"
 }
 ```

@@ -20,11 +20,16 @@ public enum CleanupPolicy
 /// state by reading the topic in full, so the last record per key must outlive any retention window
 /// (OD-008).
 /// </param>
+/// <param name="AllowsTombstones">
+/// The register's <i>Tombstones</i> column (OD-021). Only where it is set is a null value a record —
+/// passed to the consumer's tombstone handler — rather than an invalid one for the DLQ.
+/// </param>
 public sealed record TopicSpec(
     string Name,
     int Partitions,
     CleanupPolicy Cleanup,
-    TimeSpan? Retention)
+    TimeSpan? Retention,
+    bool AllowsTombstones = false)
 {
     /// <summary>
     /// Replication factor. **1 locally, 3 production-like** (§2). One broker cannot host three
@@ -55,7 +60,8 @@ public static class TopicRegister
         // Infinite, and `compact` with no `delete` (OD-008). It was `compact+delete` at 7 d, which
         // contradicted §5's requirement that the Supervisor learn current state by reading the
         // topic in full: a machine stable for longer than the retention lost its only record.
-        new("factory.equipment-states.v1", 12, CleanupPolicy.Compact, null),
+        // The one topic with tombstones: the gateway's way for equipment to leave (OD-008, OD-021).
+        new("factory.equipment-states.v1", 12, CleanupPolicy.Compact, null, AllowsTombstones: true),
 
         new("factory.model-deployments.v1", 1, CleanupPolicy.Compact, null),
         new("factory.faults.v1", 3, CleanupPolicy.Delete, TimeSpan.FromDays(7)),
@@ -67,4 +73,7 @@ public static class TopicRegister
     /// <summary>Every topic the bootstrap creates: the seven, each with its <c>.dlq</c> (§9).</summary>
     public static IReadOnlyList<TopicSpec> All { get; } =
         [.. Sources, .. Sources.Select(t => t.DeadLetter())];
+
+    /// <summary>The register's entry for a topic, or <c>null</c> if it has none.</summary>
+    public static TopicSpec? Find(string name) => All.FirstOrDefault(t => t.Name == name);
 }
