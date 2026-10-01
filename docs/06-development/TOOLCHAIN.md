@@ -58,11 +58,11 @@ last redistributable under Microsoft's terms rather than an open licence. See AD
 `OPCFoundation.NetStandard.Opc.Ua` **meta package is deliberately not used** — it has no framework
 assets of its own and pulls in GDS and complex-type assemblies neither service needs.
 
-### Phase 4 — pinned by ADR-0024, not yet referenced
+### Phase 4 — pinned by ADR-0024
 
-Accepted 2026-10-01. **Nothing below is in a project file yet**: Phase 4's Definition-of-Ready check
-is READY (2026-10-01) but implementation has not started, and ADR-0024's group B conditions are
-verified by the Phase 4 spike. Fixed here so that no one chooses them again.
+Accepted 2026-10-01, referenced the same day by `OperationsService` and its tests when Phase 4
+started; ADR-0024's group B conditions were checked against them first. Licence scan of the whole
+graph: **61 packages, all permissive** (59 by metadata, 2 by recorded evidence).
 
 | Component | Package / image | Version | Licence |
 |---|---|---|---|

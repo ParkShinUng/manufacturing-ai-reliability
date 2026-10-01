@@ -28,6 +28,8 @@ const EVIDENCE = "scripts/license-evidence.json";
 const PERMISSIVE = new Set([
   "MIT", "MIT-0", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "0BSD", "Unlicense",
   "MS-PL", "MICROSOFT SOFTWARE LICENSE TERMS", "MICROSOFT .NET LIBRARY",
+  // Npgsql (ADR-0024 B1). SPDX "PostgreSQL": OSI-approved, permissive - a BSD/MIT-style notice.
+  "PostgreSQL",
 ]);
 
 const packagesRoot = join(homedir(), ".nuget", "packages");

@@ -7,7 +7,7 @@ Read `MASTER_SPEC.md` and the full reading order in `README.md` before implement
 ## Implementation gate — CHECK THIS FIRST, EVERY SESSION
 
 **Specification status: v0.3. Human decision: APPROVED_WITH_CONDITIONS — all conditions satisfied
-(2026-09-15). Gate: OPEN. Phases 1 and 2: COMPLETE (2026-09-22). Phase 3: COMPLETE (2026-09-30). Phase 4: requested 2026-09-30, READY (DoR, 2026-10-01), not started.**
+(2026-09-15). Gate: OPEN. Phases 1 and 2: COMPLETE (2026-09-22). Phase 3: COMPLETE (2026-09-30). Phase 4: IN PROGRESS (requested 2026-09-30, started 2026-10-01).**
 
 Before doing ANY implementation work, read
 `docs/10-human-review/v0.3/HUMAN_APPROVAL.md`.
@@ -47,8 +47,8 @@ ACCEPT) and green in CI.
 
 The product owner asked for **Phase 4** on **2026-09-30**. Its Definition-of-Ready check was
 NOT READY, and is **READY** since 2026-10-01 (`reviews/phase-4/`): `OD-011`–`OD-019` resolved,
-`ADR-0024` accepted, test specifications written. Implementation starts when the product owner
-confirms it; `ADR-0024`'s group B conditions are entry conditions, as ADR-0021's were.
+`ADR-0024` accepted, test specifications written. Implementation **started 2026-10-01** at the product
+owner's request; `ADR-0024`'s group B conditions are entry conditions, as ADR-0021's were.
 Nothing authorises **Phase 5** — ask first.
 
 Every change still follows `DEFINITION_OF_READY.md` and `DUAL_AGENT_PROTOCOL.md`: documentation and

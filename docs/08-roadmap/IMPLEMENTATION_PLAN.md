@@ -140,7 +140,7 @@ commit · DLQ and redrive · lag and record-age metrics · replay on projector g
 **Proof:** **AC-045** (replay mechanics), AC-026, AC-027. `AC-003`'s safety claim is Phase 6 and
 the read-model rebuild is Phase 4 (OD-007).
 
-## Phase 4 — Operational Data + Operations API
+## Phase 4 — Operational Data + Operations API — **IN PROGRESS** (started 2026-10-01)
 
 > **Requested by the product owner 2026-09-30. Definition-of-Ready check, 2026-09-30 — NOT READY.**
 > Codex challenged it read-only (`reviews/phase-4/CODEX_DOR_CHALLENGE_raw.md`): ten items, three P0.
@@ -163,6 +163,21 @@ the read-model rebuild is Phase 4 (OD-007).
 > **Definition-of-Ready re-check, 2026-10-01 — READY.** Codex verified `P4-DOR-001`–`010` closed and
 > each new specification falsifiable (`reviews/phase-4/CODEX_DOR_VERIFY_raw.md`); its three new
 > findings were stale wording, fixed the same day.
+>
+> **Started 2026-10-01 at the product owner's request.** Order of work:
+>
+> 1. **Entry conditions first** — `ADR-0024` group B: the projects created with the pinned packages
+>    and lock files, the licence graph (B1), token validation (B2), the AC-030 harness (B3), the
+>    PostgreSQL container (B4), the migration runner (B5), the canonical dump (B6).
+>    **Done 2026-10-01**, all six true (B4 on Windows; CI on the next push). The migration runner's
+>    tests found a checksum defect before anything depended on it.
+> 2. **The `operations` schema** — tables per `OPERATIONAL_DATA.md` §7–§9a, with provenance and no
+>    non-deterministic column (OD-014, OD-016).
+> 3. **The projector** — one consumer per topic on the shared `ContractConsumer`, idempotent upserts,
+>    range rebuild — `PROJ-001`, `PROJ-002`, the storage half of `AUDIT-001`.
+> 4. **The Operations API** — authentication, rate limit, staleness, every route — `API-001`,
+>    `TRACE-001`, the query half of `AUDIT-001`.
+> 5. **Lifecycle** — readiness gate, retention job, PostgreSQL outage behaviour (`FAIL-DB-001`).
 PostgreSQL projections and read models · rebuild-from-Kafka · Operations API per the OpenAPI
 contract · correlation-chain retrieval.
 **Proof:** **AC-047** (trace store-and-query, OD-011), AC-028, AC-029, AC-030, **AC-046** (read

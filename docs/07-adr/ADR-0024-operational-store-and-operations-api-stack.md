@@ -217,6 +217,17 @@ precedent).
 - **B6 — the canonical dump is stable.** The same rows dump to the same bytes across two sessions
   with different `DateStyle`, `TimeZone` and `extra_float_digits`.
 
+### Group B — status, 2026-10-01
+
+| | Result | Evidence |
+|---|---|---|
+| B1 | **DONE** — 61 packages, all permissive, after `PostgreSQL` was added to the allow-list. Before it, the scan failed on Npgsql, so the gate was checked as well as passed | `scripts/license-scan.mjs` |
+| B2 | **DONE** — a token from `scripts/mint-token.mjs` is accepted with `sub` and `roles` unrenamed; 16 refusals each give `401`; three no-recognised-role shapes give `403`; a token asserting the internal role claim gains nothing; no authority, metadata address or configuration manager exists; a duplicate `kid` and a private key in the key set fail startup. Mutation-checked: re-enabling `TryAllIssuerSigningKeys` fails "no kid" and "unknown kid", dropping the `iat` rule fails its case | `TokenValidationTests` (23) |
+| B3 | **DONE** — on the real contract: a conforming body with an allowed `null` passes, an error response is checked too, and an undocumented status, a wrong media type, a missing or malformed header, a missing required key, a value outside an `anyOf`, a malformed `uuid` and a malformed `date-time` each fail; coverage shrinks as responses are seen. Corvus asserts `format` | `OpenApiHarnessTests` (12) |
+| B4 | **DONE on Windows**; CI on the next push. Readiness is a TCP connection and `SELECT 1`, which the init server cannot answer; the server reports 18.6 | `PostgresDatabase`, `MigrationRunnerTests.TheServerIsTheOnePinned` |
+| B5 | **DONE** — up from empty then a no-op second run; a half-failing file leaves nothing; `CREATE INDEX CONCURRENTLY` fails the migration; an edited applied file, a version gap and a recorded version with no file are refused; two runners started together apply each file once. The edited-file test found a defect first: the checksum was an initialiser, which a `with` expression copies, so an edited migration kept its old checksum. It is computed now | `MigrationRunnerTests` (7) |
+| B6 | **DONE** — identical dumps under three different `TimeZone`/`DateStyle`/`extra_float_digits` settings; the exact text form asserted; sub-millisecond timestamps and keyless tables refused rather than dumped ambiguously | `CanonicalDumpTests` (4) |
+
 ## Round 1 classification (2026-09-30)
 
 Codex: `REVISE` — plain Npgsql, Testcontainers core and forward-only migrations judged sound; the
