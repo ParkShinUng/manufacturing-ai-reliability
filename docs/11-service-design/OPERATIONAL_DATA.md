@@ -37,8 +37,9 @@ semantics and the tables must not diverge from them.
 | `safety_decision` | `operations` · operations-projector | within 7 d |
 | `control_outcome` | `operations` · operations-projector | within 7 d |
 | `equipment_state_history` | `operations` · operations-projector | **no** — the topic is compacted; only each equipment's latest state is replayable |
-| `fault_injection` | `operations` · operations-projector | within 7 d |
+| `fault_injection` | `operations` · operations-projector | within 7 d — **not yet created**: `factory.faults.v1` has no contract (OD-020) |
 | `model_deployment` | `operations` · operations-projector | latest per model only (compacted) |
+| `authorization_watermark` | `operations` · operations-projector | latest only (compacted); one row, the newest `WATERMARK` record |
 | **`control_state`** | **`control` · control-service** | **NO — authoritative** |
 | **`command_idempotency`** | **`control` · control-service** | **NO — authoritative** |
 
@@ -50,9 +51,13 @@ The last two rows are the ones that matter operationally: everything else can be
 rebuilt, but Control Service state is original and must be backed up.
 
 ## 8. State model
-Time-series tables partitioned by `occurred_at_utc` — **daily** for `telemetry_reading_1s` and
-`prediction`, monthly for the rest; a partition is dropped when its upper bound is older than the
-table's retention (OD-018); indexed on
+Time-series tables partitioned by `occurred_at_utc` — `telemetry_reading_1s` by `second_utc` —
+**daily** for `telemetry_reading_1s` and `prediction`, monthly for the rest; a partition is dropped
+when its upper bound is older than the table's retention (OD-018). Partitions are created on demand
+by `operations.ensure_partition()` before a write, in UTC. PostgreSQL requires a partitioned table's
+primary key to contain the partition key, so those keys are the duplicate identity **plus**
+`occurred_at_utc`; a duplicate delivery carries the same `occurred_at_utc`, so it still lands on the
+same row. The schema is `src/dotnet/OperationsService/Migrations/operations/0001_projection_tables.sql`; indexed on
 `(equipment_id, occurred_at_utc)` and on `correlation_id` (the index that makes AC-006 a single query
 rather than a scan).
 

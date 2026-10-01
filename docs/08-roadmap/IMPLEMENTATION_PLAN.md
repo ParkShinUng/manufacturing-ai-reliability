@@ -173,6 +173,10 @@ the read-model rebuild is Phase 4 (OD-007).
 >    tests found a checksum defect before anything depended on it.
 > 2. **The `operations` schema** — tables per `OPERATIONAL_DATA.md` §7–§9a, with provenance and no
 >    non-deterministic column (OD-014, OD-016).
+>    **Done 2026-10-01**: seven tables, checked from the catalogue — every one keyed, with non-null
+>    provenance, and no default, identity or generated column. Two things surfaced that need a
+>    decision before the projector: `factory.faults.v1` has no contract (**OD-020**), and the shared
+>    consumer dead-letters the equipment-state tombstones `OD-008` made legitimate (**OD-021**).
 > 3. **The projector** — one consumer per topic on the shared `ContractConsumer`, idempotent upserts,
 >    range rebuild — `PROJ-001`, `PROJ-002`, the storage half of `AUDIT-001`.
 > 4. **The Operations API** — authentication, rate limit, staleness, every route — `API-001`,

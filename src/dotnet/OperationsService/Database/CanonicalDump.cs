@@ -16,12 +16,20 @@ namespace Mair.OperationsService.Database;
 /// </summary>
 public static class CanonicalDump
 {
-    /// <summary>Every table of the schema except its migration history, by name.</summary>
+    /// <summary>
+    /// Every logical table of the schema except its migration history, by name. A partitioned table
+    /// is dumped once, through its parent: its partitions are storage, and which partitions exist
+    /// depends on when rows arrived, not on what the rows are.
+    /// </summary>
     public static async Task<string> DumpSchemaAsync(NpgsqlConnection conn, string schema, CancellationToken cancellationToken = default)
     {
         var tables = new List<string>();
-        await using (var cmd = new NpgsqlCommand(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE' AND table_name <> 'schema_migrations' ORDER BY table_name COLLATE \"C\"", conn))
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT c.relname
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = $1 AND c.relkind IN ('r', 'p') AND NOT c.relispartition AND c.relname <> 'schema_migrations'
+            ORDER BY c.relname COLLATE "C"
+            """, conn))
         {
             cmd.Parameters.Add(new NpgsqlParameter { Value = schema });
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);

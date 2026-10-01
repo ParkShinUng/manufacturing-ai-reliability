@@ -1052,6 +1052,63 @@ defines **M1–M10**.
 
 ---
 
+# OD-020 — OPEN — `factory.faults.v1` has a projection table and no contract
+
+> Raised 2026-10-01 in Phase 4 step 2, while deriving the `operations` tables from the contracts.
+
+## The problem
+
+`OPERATIONAL_DATA.md` §7 lists `fault_injection` as a projection of `factory.faults.v1`, and
+`KAFKA_TOPOLOGY_AND_SEMANTICS.md` gives the topic a producer (the simulator), a key and a duplicate
+identity (`faultInjectionId`). **There is no `faults` schema** in `contracts/jsonschema/v1/` and no
+example. The projector is built on the shared consume-validate-DLQ component (`OD-009`), which
+validates every record against its contract: without one it has nothing to validate against, and a
+table derived from no contract is an invention (`ADR-0017`). The producer side has the same gap —
+the simulator's fault events are demo-profile work (Phase 11) and have never been emitted.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Defer `fault_injection` to the phase that produces fault events** (Phase 11, demo profile), which writes the schema first, then the producer and the projection | Phase 4's read model has six projected tables, not seven; `OPERATIONAL_DATA.md` §7 says when the seventh arrives |
+| **B** | Write a faults schema now, from `FaultInjectionRequest` in the OpenAPI contract and the simulator's profiles, and project it in Phase 4 | a contract authored two phases before its producer, on a guess at what the producer will emit — the pattern `OD-011` avoided for the API by tying fields to an observed record |
+
+**Recommendation: A.** No producer, no record and no consumer need it before Phase 11, and the
+`OD-011` precedent is that a contract is written by the phase that can test it end to end.
+
+---
+
+# OD-021 — OPEN — the shared consumer dead-letters a tombstone, and the contract says tombstones are legitimate
+
+> Raised 2026-10-01 in Phase 4 step 2. A Phase 3 defect that could not surface before: Phase 3 had
+> no consumer of `factory.equipment-states.v1`.
+
+## The problem
+
+`OD-008` made `factory.equipment-states.v1` compact-only and gave equipment a way to leave: the
+gateway writes a **tombstone** — a null value under the equipment's key — and Phase 3 implemented
+it (`KafkaEquipmentStateSink`). `ContractConsumer.ProcessOneAsync` validates **every** record's bytes
+against the schema; a null value is no JSON at all, so it is classed `Unparseable` and sent to the
+DLQ on the first attempt. The operations projector — the topic's first consumer apart from the
+Supervisor in Phase 6 — would therefore dead-letter every decommissioning and raise an alert for a
+correct record.
+
+Two things need deciding: **where** a tombstone is recognised, and **what the projection does**
+with one.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **The shared component treats a null value as a tombstone on a topic whose contract allows one**, passing it to a separate handler, and as `Unparseable` everywhere else. Only `factory.equipment-states.v1` (and later the compacted model-deployments topic, if its contract says so) allows one. The projection **keeps** the equipment's history — it is audit — and records the decommissioning, so "current equipment" excludes it | a widening of the bounded component `OD-009` allowed, by one rule that comes from a contract (`OD-008`), not from a consumer's convenience |
+| **B** | Each consumer filters tombstones before the shared path | the rule re-implemented per consumer — exactly the divergence `OD-009` chose the shared component to prevent; the Supervisor (Phase 6) would need its own copy |
+| **C** | The gateway stops writing tombstones | reverses `OD-008`: "read the topic in full" reports machines that no longer exist |
+
+**Recommendation: A.** The tombstone is part of the contract, so the contract-enforcing component is
+where it belongs. Deleting history on a tombstone would destroy audit records `AC-029` must keep.
+
+---
+
 ## Found while writing OD-011–018, and fixed directly
 
 `FaultInjectionRequest.profile` in the OpenAPI contract listed ten profiles. `OD-001` added
