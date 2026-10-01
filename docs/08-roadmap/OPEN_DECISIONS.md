@@ -1160,7 +1160,7 @@ now never deleted. Round 3: `ACCEPT`.
 
 ---
 
-# OD-022 — OPEN — a store outage would send the projector's records to the DLQ, and the store's own numbers are not numbers
+# OD-022 — RESOLVED 2026-10-02 — option A — a store outage would send the projector's records to the DLQ, and the store's own numbers are not numbers
 
 > Raised 2026-10-01 at the start of Phase 4 step 5 (lifecycle), comparing `OPERATIONAL_DATA.md`
 > §11–§12 with the shared consumer. Kafka semantics and failure recovery: Codex participation is
@@ -1202,6 +1202,87 @@ and "a dependency is down" is a fact about the world, not about the record, whic
 | Circuit breaker | §12 | on the API's database calls: after **5** consecutive connection-class failures, answer `503` immediately for **30 s**, then let one request through to probe |
 | Retention job | §11, §15 | runs at start and every **hour**; drops each partition whose upper bound is older than its table's retention; `equipment_decommission` never |
 | Disk pressure | §11 | **dropped from Phase 4**: nothing measures it, and dropping data on a guessed threshold is worse than the retention job's fixed rule. Phase 8 (observability) owns a disk metric and its alert |
+
+
+## Decision — A, with Codex's conditions, confirmed by the product owner (2026-10-02)
+
+Codex: `SOUND_WITH_CONDITIONS` (`reviews/phase-4/CODEX_OD-022_CHALLENGE_raw.md`; the first attempt
+stopped at a usage limit before a verdict). Its seven conditions and four findings, as applied:
+
+**The outage path in the shared consumer** (`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §9, `OD-009`'s scope):
+
+1. A handler signals an outage by throwing **`DependencyUnavailableException`** — a distinct type,
+   never inferred from "a database exception". Every other failure keeps §9: three attempts, then
+   the DLQ.
+2. **Ordering**: on an outage at offset N, the consumer **pauses every assigned partition** and seeks
+   N's partition back to N. Nothing after N on that partition — and nothing on any other — is
+   processed until N succeeds. It retries N itself, in hand.
+3. **Polling continues** while paused, with each wait cut into polls of at most 500 ms, so
+   `max.poll.interval.ms` (300 s) is never approached and rebalances are served.
+4. **Rebalance**: if N's partition is no longer assigned, the consumer abandons N — no commit, no
+   DLQ — and the next owner resumes from the last committed offset. A record a reassignment
+   delivers during the wait is sought back, unprocessed, and its partition paused too.
+5. **Caught up** is cleared the moment a record is consumed, before its handler runs (`P4-OD22-001`),
+   so a stall can never show as current.
+6. A misclassified poison record **stalls its partition visibly**: lag and staleness grow, the DLQ
+   stays empty, and the consumer reports the outage — topic, partition, offset, exception type,
+   since when, and attempts (`P4-OD22-003`).
+7. **Backoff**: 1 s doubling to 30 s, ±20 % jitter. Used by the operations projector's writes only
+   in Phase 4. The Safety Supervisor (Phase 6) decides its own adoption, without weakening
+   reject-first-then-DLQ, and states its interaction with the prediction TTL and `seekToEnd`.
+
+**"Unavailable"** (`P4-OD22-004`), the one classification the projector and the API share: a client
+failure that is not a server-reported SQL error — connection refused or reset, network or query
+timeout, pool exhausted — and these SQLSTATEs: class `08` (connection), `57P01`–`57P03` (shutdown,
+cannot connect now), `53300` (too many connections), class `28` (authentication: a wrong password
+stalls visibly rather than dead-lettering every record). Every other SQL error is a defect: the
+API answers it with a `500` that the contract harness reports, and the projector's §9 path DLQs it.
+
+**Numbers:**
+
+| Value | Decision |
+|---|---|
+| Read retries | none: one attempt within the 3 s command timeout, `503` on an unavailable store |
+| Write retries | the outage path above; nothing else |
+| Circuit breaker | the API's database calls, **per instance**: 5 consecutive unavailable results open it; for 30 s every database route answers `503` at once; then **one** request is let through — success closes it, failure opens it for another 30 s; concurrent requests during that probe get `503`. Health does not use it |
+| Retention job | at start and hourly — **per-table periods are OD-023** |
+| Disk pressure | removed from Phase 4; Phase 8 owns a disk metric and its alert |
+
+---
+
+# OD-023 — OPEN — the projector rewrites and deletes audit records the security boundary says nobody may change
+
+> Raised 2026-10-02 while preparing the retention job (Phase 4 step 5). Data ownership, persistence
+> and a security boundary: Codex participation is mandatory.
+
+## The problem
+
+`SECURITY_BOUNDARIES.md` (audit record): decisions and outcomes are stored in `control_outcome` (and
+`safety_decision`), *append-only; no service holds UPDATE or DELETE permission on them*. What Phase 4
+built does not honour that:
+
+1. **Every projection write is `ON CONFLICT DO UPDATE`** — on the audit tables too. A redelivery
+   rewrites the row (with identical values today, but nothing prevents otherwise).
+2. **A range rebuild DELETEs** audit rows at or after the replayed offset (`ProjectionRebuild`, OD-014).
+3. **One table, two retentions.** "90 days for outcomes, 1 year for mode transitions" — and since
+   OD-019 a mode transition *is* a control outcome, in `control_outcome`, partitioned monthly. Dropping
+   a 90-day-old partition would delete transitions that must live a year.
+4. **`equipment_state_history` has no retention** anywhere; only the migration comment says a year.
+5. **The least-privilege roles of `OPERATIONAL_DATA.md` §16** — projector write-only, API read-only —
+   do not exist: every connection is one role. So "no service holds UPDATE or DELETE" is not enforced
+   by anything.
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **Audit tables become insert-only, and retention follows the longest claim.** `safety_decision` and `control_outcome` are written `ON CONFLICT DO NOTHING`: a redelivery is a no-op, the first write in offset order wins, and a rebuild into an empty store replays the same order, so the canonical dump is unchanged. A range rebuild **does not delete** from audit tables — replaying the range re-inserts only what is missing. `control_outcome` is kept **1 y** whole (≥ 90 d for outcomes, = 1 y for transitions); `safety_decision` 90 d; `equipment_state_history` 1 y. Retention drops whole partitions — DDL by the migration owner's role, not row DELETE. Phase 4 creates the roles of §16 in its migration: the projector role may INSERT on audit tables and INSERT/UPDATE/DELETE only on the rebuildable ones; the API role may only SELECT | outcomes are kept 9 months longer than "90 days" required; roles add a second connection string and a migration that touches cluster-level objects |
+| **B** | Amend `SECURITY_BOUNDARIES.md`: the projector may UPDATE and DELETE audit rows | the cheapest; the audit trail loses the property the security document gave it |
+| **C** | Move mode transitions into their own table with a 1 y retention; outcomes 90 d | exact retentions, but a second record for one event — the duplication OD-019 chose to avoid — and a projection that splits a topic by content |
+
+**Recommendation: A.** It makes the audit property true and enforced, keeps OD-014's determinism
+(first-wins in offset order is as deterministic as last-wins), and resolves the retention conflict by
+keeping more, never less.
 
 ---
 
