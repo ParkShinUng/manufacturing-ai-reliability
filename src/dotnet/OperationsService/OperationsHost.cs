@@ -27,12 +27,13 @@ public static class OperationsHost
         string Required(string key) =>
             config[key] is { Length: > 0 } value ? value : throw new InvalidOperationException($"configuration key '{key}' is required (OPERATIONS_API.md §15)");
 
-        var connection = new NpgsqlConnectionStringBuilder(config.GetConnectionString("Operations")
-            ?? throw new InvalidOperationException("configuration key 'ConnectionStrings:Operations' is required (OPERATIONS_API.md §15)"))
-        {
-            // §12: 3 s, whatever the connection string says.
-            CommandTimeout = 3,
-        };
+        var runtime = config.GetConnectionString("Operations")
+            ?? throw new InvalidOperationException("configuration key 'ConnectionStrings:Operations' is required (OPERATIONS_API.md §15)");
+        var profile = config["Mair:Profile"] ?? "local";
+        var owner = config.GetConnectionString("OperationsMigrations")
+            ?? (profile == "production-like"
+                ? throw new InvalidOperationException("configuration key 'ConnectionStrings:OperationsMigrations' is required in production-like (OPERATIONS_API.md §15)")
+                : runtime);
         var bootstrapServers = Required("Mair:Kafka:BootstrapServers");
         var contracts = Required("Mair:Contracts");
         var keyFiles = config.GetSection("Mair:Tokens:PublicKeyFiles").GetChildren().Select(c => c.Value!).Where(v => v.Length > 0).ToList();
@@ -41,8 +42,16 @@ public static class OperationsHost
             throw new InvalidOperationException("configuration key 'Mair:Tokens:PublicKeyFiles' is required (OPERATIONS_API.md §15)");
         }
 
-        var db = NpgsqlDataSource.Create(connection.ConnectionString);
-        await new MigrationRunner(db, "operations", 1).RunAsync(MigrationRunner.Embedded("operations"));
+        await using (var migrations = NpgsqlDataSource.Create(owner))
+        {
+            await new MigrationRunner(migrations, "operations", 1).RunAsync(MigrationRunner.Embedded("operations"));
+        }
+
+        // One data source per role (OD-023): the API's sessions can only read, the projector's cannot
+        // change an audit row, the retention job's can call one function.
+        var reader = OperationsRoles.DataSource(runtime, OperationsRoles.Reader);
+        var writer = OperationsRoles.DataSource(runtime, OperationsRoles.Projector);
+        var retention = OperationsRoles.DataSource(runtime, OperationsRoles.Retention);
 
         var deadLetters = new ProducerBuilder<string, byte[]>(new ProducerConfig
         {
@@ -51,11 +60,12 @@ public static class OperationsHost
             EnableIdempotence = true,
             AllowAutoCreateTopics = false,
         }).Build();
-        var projector = new OperationsProjector(bootstrapServers, db, contracts, deadLetters);
+        var projector = new OperationsProjector(bootstrapServers, writer, contracts, deadLetters);
         var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = bootstrapServers }).Build();
 
-        builder.Services.AddSingleton(db);
         builder.Services.AddSingleton(projector);
+        builder.Services.AddSingleton(new RetentionJob(retention, TimeProvider.System));
+        builder.Services.AddHostedService<RetentionService>();
         builder.Services.AddSingleton(deadLetters);
         builder.Services.AddSingleton(admin);
         builder.Services.AddHostedService<ProjectorService>();
@@ -65,7 +75,7 @@ public static class OperationsHost
         builder.Services.AddOperationsApi();
 
         var app = builder.Build();
-        app.MapOperationsApi(db, new ProjectorStatus(projector), new KafkaProbe(admin, TimeProvider.System), TimeProvider.System);
+        app.MapOperationsApi(reader, new ProjectorStatus(projector), new KafkaProbe(admin, TimeProvider.System), TimeProvider.System);
         return app;
     }
 

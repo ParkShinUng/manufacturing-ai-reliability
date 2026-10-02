@@ -206,6 +206,13 @@ canonical dump. The watchdog clause is Phase 7.
 only static config) · Operations API returns 503 · no data corruption on recovery · projections
 resume from committed offsets.
 
+
+**Phase 4 part automated 2026-10-02** — `OperationsApiTests`: with PostgreSQL stopped, five readings
+produced; the projector reports the outage; five `503`s and then the circuit-open `503`; health
+`200`. After restart the five readings are projected, nothing dead-lettered, and the store's dump
+equals a rebuild's (rows written straight to the table by TRACE-001 excepted). The breaker itself,
+with a clock the test moves: `CircuitBreakerTests`.
+
 ### FAIL-CLOCK-001 — clock skew *(new)*
 **Trigger:** step one host's clock by +2 s.
 **Assert:** `clock_skew_seconds` exceeds 0.25 and alerts · freshness gates apply the skew budget on
@@ -422,6 +429,14 @@ committed and the next owner receives it.
 **Automated 2026-10-01** — `TombstoneTests`, real broker, topics of their own per test: the four
 assertions above, plus the register allowing tombstones on `factory.equipment-states.v1` alone.
 
+
+**Automated 2026-10-02** — `DependencyOutageTests`, real broker: four attempts 1 s, 2 s and 4 s apart
+on N while nothing else on either partition is handled and nothing commits past N; then N, N+1, N+2
+in order, the DLQ empty; a different failure after the outage dead-letters after three attempts; a
+consumer that goes away mid-outage leaves N uncommitted and the next owner receives it. With the
+outage branch disabled, all three fail. Revocation while the loop keeps running is not forced by a
+test: a single-partition group cannot be made to move its partition on demand.
+
 ### PROJ-002 — a projection rebuilt into an empty store equals the original → AC-028
 **Setup:** real broker and PostgreSQL 18.6; a fixture stream on every projected topic, including,
 for `factory.telemetry.v1`: a **duplicate** delivery of one record, two records in the same second
@@ -474,6 +489,14 @@ nothing; a fresh store gives the same dump; a mode transition is stored with `fr
 without it is DLQ'd. **Query half automated 2026-10-01** — `OperationsApiTests`: 25 decisions across a month boundary,
 paged by tens with rows arriving between pages, every existing one exactly once; `from` inclusive and
 `to` exclusive. The retention job is step 5.
+
+
+**Retention and privileges automated 2026-10-02** (OD-023) — `AuditPrivilegeTests`: from the
+catalogue, no runtime role holds UPDATE, DELETE or TRUNCATE on `safety_decision` or `control_outcome`;
+eight forbidden statements, each refused with `42501`; retention, as its own role and on a fixed
+clock, drops exactly the four partitions past their period and nothing on a second run, and leaves
+decommissions alone. `ProjectionTests`: a conflicting record with an audit row's identity leaves the
+first row, in the store and in a rebuild.
 
 ### API-001 — every response the API gives validates against the contract → AC-030
 **Setup:** the Operations API on the projected store of PROJ-002, an ES256 key pair minted by

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using Confluent.Kafka;
 using Mair.OperationsService.Api;
 using Mair.OperationsService.Auth;
+using Mair.OperationsService.Database;
 using Mair.OperationsService.Projection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -58,7 +59,7 @@ public sealed class ApiRig : IAsyncLifetime
         builder.Services.AddOperationsApi();
         _app = builder.Build();
         _admin = Infra.Kafka.Admin();
-        _app.MapOperationsApi(Db, new ProjectorStatus(Projector), new KafkaProbe(_admin, TimeProvider.System), TimeProvider.System);
+        _app.MapOperationsApi(Infra.Role(Db, OperationsRoles.Reader), new ProjectorStatus(Projector), new KafkaProbe(_admin, TimeProvider.System), TimeProvider.System);
         await _app.StartAsync();
 
         var address = _app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
@@ -110,6 +111,16 @@ public sealed class ApiRig : IAsyncLifetime
             Assert.True(DateTime.UtcNow < deadline, "the projector did not catch up");
             await Task.Delay(100);
         }
+    }
+
+    /// <summary>
+    /// Starts PostgreSQL again and empties the test's own pool, whose connections all died with the
+    /// server. The projector's and the API's data sources clear theirs on their first failure.
+    /// </summary>
+    public async Task RestartPostgresAsync()
+    {
+        await Infra.Postgres.StartAsync();
+        Db.Clear();
     }
 
     /// <summary>

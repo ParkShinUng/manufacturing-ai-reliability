@@ -4,6 +4,7 @@ using Confluent.Kafka;
 using Mair.EventBackbone;
 using Mair.EventBackbone.Tests;
 using Mair.OperationsService.Database;
+
 using Mair.OperationsService.Projection;
 using Npgsql;
 
@@ -47,8 +48,18 @@ public sealed class ProjectionRig : IAsyncLifetime
     public IProducer<string, byte[]> Producer() =>
         new ProducerBuilder<string, byte[]>(new ProducerConfig { BootstrapServers = Kafka.BootstrapServers, Acks = Acks.All, EnableIdempotence = true }).Build();
 
+    /// <summary>The projector on <paramref name="db"/>'s database, as <c>mair_ops_projector</c> (OD-023).</summary>
     public OperationsProjector Projector(NpgsqlDataSource db, IProducer<string, byte[]> deadLetters, string? group = null) =>
-        new(Kafka.BootstrapServers, db, Contracts, deadLetters, group ?? "cg.test-projector." + Guid.NewGuid().ToString("N")[..8]);
+        new(Kafka.BootstrapServers, Role(db, OperationsRoles.Projector), Contracts, deadLetters, group ?? "cg.test-projector." + Guid.NewGuid().ToString("N")[..8]);
+
+    /// <summary>
+    /// A data source on the same database whose sessions run as <paramref name="role"/>. Built from
+    /// the fixture's own connection string: <c>NpgsqlDataSource.ConnectionString</c> leaves the
+    /// password out, and a role data source built from it fails to authenticate - which the projector
+    /// then waits out as an outage (OD-022), as it should.
+    /// </summary>
+    public NpgsqlDataSource Role(NpgsqlDataSource db, string role) =>
+        OperationsRoles.DataSource(Postgres.ConnectionString(new NpgsqlConnectionStringBuilder(db.ConnectionString).Database!), role);
 
     /// <summary>
     /// Runs the projector until every consumer has been caught up (OD-018) after this call began, so
@@ -65,7 +76,7 @@ public sealed class ProjectionRig : IAsyncLifetime
             while (!projector.CaughtUpSince(started))
             {
                 Assert.True(DateTime.UtcNow < deadline, "the projector did not catch up: " + string.Join(" | ",
-                    projector.Consumers.Select(c => $"{c.Topic}: processed {c.Processed}, last caught up {c.LastCaughtUpUtc:O}")));
+                    projector.Consumers.Select(c => $"{c.Topic}: processed {c.Processed}, last caught up {c.LastCaughtUpUtc:O}, outage {c.Outage}")));
                 await Task.Delay(100);
             }
         }

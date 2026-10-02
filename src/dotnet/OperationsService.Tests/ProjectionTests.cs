@@ -166,6 +166,43 @@ public sealed class ProjectionTests(ProjectionRig rig) : IClassFixture<Projectio
     }
 
     [Fact]
+    public async Task AnAuditRowIsFirstWins_ALaterRecordWithItsIdentityChangesNothing_EvenAfterARebuild()
+    {
+        // OD-023: insert-only. The same decision identity, a second time, with a different payload.
+        using var producer = rig.Producer();
+        var eq = ProjectionRig.NewEquipment();
+        var first = ProjectionRig.Example("safety-decision.clamped");
+        var id = ProjectionRig.NewId();
+        first["decisionId"] = id;
+        first["equipmentId"] = eq;
+        first["decision"] = "ACCEPT";
+        first["correlationId"] = ProjectionRig.NewId();
+        var conflicting = first.DeepClone().AsObject();
+        conflicting["decision"] = "REJECT";
+        conflicting["reasonCodes"] = new JsonArray("OOD_HIGH");
+        await ProjectionRig.ProduceAsync(producer, "factory.safety-decisions.v1", eq, first);
+        await ProjectionRig.ProduceAsync(producer, "factory.safety-decisions.v1", eq, conflicting);
+
+        await using var db = await rig.MigratedAsync();
+        using (var projector = rig.Projector(db, producer))
+        {
+            await ProjectionRig.CatchUpAsync(projector);
+        }
+
+        Assert.Equal("ACCEPT", await ScalarAsync(db, "SELECT decision FROM operations.safety_decision WHERE decision_id = $1::uuid", id));
+        Assert.Equal(1L, await ScalarAsync(db, "SELECT count(*) FROM operations.safety_decision WHERE decision_id = $1::uuid", id));
+
+        // A rebuild replays the same order, so it keeps the same first row.
+        await using var rebuilt = await rig.MigratedAsync();
+        using (var projector = rig.Projector(rebuilt, producer))
+        {
+            await ProjectionRig.CatchUpAsync(projector);
+        }
+
+        Assert.Equal("ACCEPT", await ScalarAsync(rebuilt, "SELECT decision FROM operations.safety_decision WHERE decision_id = $1::uuid", id));
+    }
+
+    [Fact]
     public async Task AModeTransitionIsStoredWithItsFromMode_AndOneWithoutIsDeadLettered()
     {
         using var producer = rig.Producer();

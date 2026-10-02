@@ -76,7 +76,8 @@ public sealed class ProjectionRebuildTests(ProjectionRig rig) : IClassFixture<Pr
                     "SELECT count(*) FROM operations.telemetry_reading_1s WHERE source_partition = $1 AND source_offset >= $2",
                     from.Partition.Value, from.Offset.Value);
                 Assert.True(inRange >= 6);
-                Assert.Equal(inRange, await ProjectionRebuild.ReplaceFromAsync(admin, db, ConsumerGroupRegister.OperationsProjector, [from]));
+                await using var asProjector = rig.Role(db, Mair.OperationsService.Database.OperationsRoles.Projector);
+                Assert.Equal(inRange, await ProjectionRebuild.ReplaceFromAsync(admin, asProjector, ConsumerGroupRegister.OperationsProjector, [from]));
             }
 
             Assert.Equal(untouched, await CountAsync(db, before, from.Partition.Value, from.Offset.Value, eq));

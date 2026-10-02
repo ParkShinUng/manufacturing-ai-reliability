@@ -16,15 +16,20 @@ namespace Mair.OperationsService.Projection;
 /// </summary>
 public static class ProjectionRebuild
 {
-    /// <summary>The projection tables each topic writes, with the table's provenance columns.</summary>
+    /// <summary>
+    /// The tables a rebuild may delete from, per topic (OD-023): only those whose topic keeps every
+    /// record within retention, so a replay restores what was deleted. The audit tables are
+    /// insert-only, and the tables of compacted topics would not get their history back: for those
+    /// topics the rewind alone runs, and the replay re-inserts only what is missing.
+    /// </summary>
     private static readonly Dictionary<string, string[]> TablesByTopic = new()
     {
         ["factory.telemetry.v1"] = ["telemetry_reading_1s"],
-        ["factory.equipment-states.v1"] = ["equipment_state_history", "equipment_decommission"],
         ["factory.predictions.v1"] = ["prediction"],
-        ["factory.safety-decisions.v1"] = ["safety_decision"],
-        ["factory.control-outcomes.v1"] = ["control_outcome"],
-        ["factory.model-deployments.v1"] = ["model_deployment", "authorization_watermark"],
+        ["factory.equipment-states.v1"] = [],
+        ["factory.safety-decisions.v1"] = [],
+        ["factory.control-outcomes.v1"] = [],
+        ["factory.model-deployments.v1"] = [],
     };
 
     /// <returns>The rows deleted, to be written back by the replay.</returns>

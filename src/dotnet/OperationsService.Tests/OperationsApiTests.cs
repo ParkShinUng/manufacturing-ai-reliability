@@ -186,7 +186,7 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         }
         finally
         {
-            await rig.Infra.Postgres.StartAsync();
+            await rig.RestartPostgresAsync();
             await rig.BreakerClosedAsync(viewer);
         }
 
@@ -247,10 +247,7 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         }
         finally
         {
-            await rig.Infra.Postgres.StartAsync();
-
-            // The test's own queries share the projector's pool; start them on fresh connections.
-            rig.Db.Clear();
+            await rig.RestartPostgresAsync();
         }
 
         await rig.CaughtUpAsync();

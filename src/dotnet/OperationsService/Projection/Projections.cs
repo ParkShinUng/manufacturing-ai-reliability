@@ -131,6 +131,10 @@ public sealed class Projections(NpgsqlDataSource db)
             record.Topic, record.Partition.Value, record.Offset.Value);
     }
 
+    /// <summary>
+    /// An audit record: insert-only (SECURITY_BOUNDARIES.md), first-wins in offset order (OD-023). A
+    /// later record with the same identity - even a different payload - leaves the first row as it is.
+    /// </summary>
     public async Task SafetyDecisionAsync(ConsumeResult<string, byte[]> record, CancellationToken cancellationToken)
     {
         using var doc = JsonDocument.Parse(record.Message.Value);
@@ -139,11 +143,7 @@ public sealed class Projections(NpgsqlDataSource db)
 
         await WriteAsync("safety_decision", occurred, """
             INSERT INTO operations.safety_decision VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            ON CONFLICT (decision_id, occurred_at_utc) DO UPDATE SET
-                equipment_id = EXCLUDED.equipment_id, prediction_id = EXCLUDED.prediction_id, decided_at_utc = EXCLUDED.decided_at_utc,
-                decision = EXCLUDED.decision, control_mode = EXCLUDED.control_mode, reason_codes = EXCLUDED.reason_codes,
-                correlation_id = EXCLUDED.correlation_id, causation_id = EXCLUDED.causation_id, record = EXCLUDED.record,
-                source_topic = EXCLUDED.source_topic, source_partition = EXCLUDED.source_partition, source_offset = EXCLUDED.source_offset
+            ON CONFLICT (decision_id, occurred_at_utc) DO NOTHING
             """,
             cancellationToken,
             Guid.Parse(Str(r, "decisionId"u8)), occurred, Str(r, "equipmentId"u8), OptGuid(r, "predictionId"u8),
@@ -152,6 +152,7 @@ public sealed class Projections(NpgsqlDataSource db)
             record.Topic, record.Partition.Value, record.Offset.Value);
     }
 
+    /// <summary>An audit record, as <see cref="SafetyDecisionAsync"/>: insert-only, first-wins.</summary>
     public async Task ControlOutcomeAsync(ConsumeResult<string, byte[]> record, CancellationToken cancellationToken)
     {
         using var doc = JsonDocument.Parse(record.Message.Value);
@@ -160,12 +161,7 @@ public sealed class Projections(NpgsqlDataSource db)
 
         await WriteAsync("control_outcome", occurred, """
             INSERT INTO operations.control_outcome VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-            ON CONFLICT (command_id, occurred_at_utc) DO UPDATE SET
-                equipment_id = EXCLUDED.equipment_id, decision_id = EXCLUDED.decision_id, status = EXCLUDED.status,
-                reason_code = EXCLUDED.reason_code, control_epoch = EXCLUDED.control_epoch, resulting_mode = EXCLUDED.resulting_mode,
-                from_mode = EXCLUDED.from_mode, mode_transition_id = EXCLUDED.mode_transition_id, autonomous = EXCLUDED.autonomous,
-                correlation_id = EXCLUDED.correlation_id, causation_id = EXCLUDED.causation_id, record = EXCLUDED.record,
-                source_topic = EXCLUDED.source_topic, source_partition = EXCLUDED.source_partition, source_offset = EXCLUDED.source_offset
+            ON CONFLICT (command_id, occurred_at_utc) DO NOTHING
             """,
             cancellationToken,
             Guid.Parse(Str(r, "commandId"u8)), occurred, Str(r, "equipmentId"u8), OptGuid(r, "decisionId"u8),
