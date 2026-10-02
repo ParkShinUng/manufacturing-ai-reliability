@@ -516,16 +516,17 @@ every documented `(path, method, status)` exercised. `POST /demo/faults` in the 
 `401`, `403` (a viewer, and an operator alike — disabled outside the demo profile) and `429`. **Excluded
 and recorded:** its `202` and `400`, which only the demo profile produces — Phase 11. *(Until
 2026-10-02 the whole route was excluded and asserted absent; Codex's Phase 4 verification,
-`P4-COD-001`, pointed out that AC-031 makes it 403 outside the demo profile and absent only from the
-production-like build.)*
+`P4-COD-001`, pointed out that the demo-profile criterion makes it 403 outside the demo profile and
+absent only from the production-like build.)*
 
 
 **Automated 2026-10-01** — `OperationsApiTests`, the API on Kestrel over a projected store, every
 response through the ADR-0024 harness. All seven routes give 200, 401, 403 and 429; every route
 with parameters gives 400; the four with a resource give 404; the six database-backed ones give 503
 with PostgreSQL stopped, while health answers without `fallbackRatePct`. The coverage check finds
-every documented response exercised except `POST /demo/faults`, recorded as excluded and asserted
-absent. The staleness header is `0` while caught up, grows past 2 with the broker down, and returns
+every documented response exercised except the demo route's `202` and `400`, which only the demo
+profile produces (Phase 11); its `401`, `403` and `429` are exercised in `local`, and
+`OperationsHostTests` proves it unmapped in `production-like`. The staleness header is `0` while caught up, grows past 2 with the broker down, and returns
 to `0` after.
 
 ### TRACE-001 — the trace returns the stored chain in one query → AC-047

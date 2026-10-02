@@ -425,7 +425,7 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         // Exactly the page-1 rows, each once - none dropped (P4-COD-002) - plus at most the one later row
         // whose key fell after the cursor: the older of the two arrivals. The newer one never appears.
         Assert.Equal(seen.Count, seen.Distinct().Count());
-        Assert.Subset(seen.ToHashSet(), existing.ToHashSet());
+        Assert.All(existing, id => Assert.Contains(id, seen));
         Assert.Equal(existing.Count + 1, seen.Count);
 
         // Range: from inclusive, to exclusive.

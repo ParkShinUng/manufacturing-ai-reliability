@@ -174,7 +174,8 @@ subject rate limits count against. Local and demo tokens are minted by a reposit
 pair generated on the developer's machine and never committed; no build or image contains a private
 key, and no route, flag or profile skips validation. Recorded as an ADR before code (`P4-DOR-009`).
 Roles: `viewer` (read), `operator` (read + `STOP_REQUIRED` reset + demo
-faults). Demo endpoints **absent** outside the demo profile, not merely hidden. **The dashboard never
+faults). Demo endpoints are **absent** from the production-like build, not merely hidden, and answer
+`403` in every other profile until the demo profile exists (AC-031, §15). **The dashboard never
 holds equipment-write credentials, and no Operations API route reaches the Control Service.**
 
 ## 17. Observability
