@@ -27,6 +27,12 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         Assert.True(actual == status, $"{path}: expected {status}, got {actual}: {body}");
     }
 
+    private async Task ExpectPostAsync(int status, string path, string? token)
+    {
+        var (actual, body) = await rig.PostAsync(path, token);
+        Assert.True(actual == status, $"POST {path}: expected {status}, got {actual}: {body}");
+    }
+
     private static string At(DateTime t) => t.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
     private sealed record Seeded(string Equipment, string Bare, string Correlation, DateTime WindowStart);
@@ -190,13 +196,18 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
             await rig.BreakerClosedAsync(viewer);
         }
 
-        // The demo route is absent outside the demo profile (Phase 11): not part of the contract run here.
-        using (var demo = await rig.Http.PostAsync($"{Api}/demo/faults", new StringContent("{}")))
-        {
-            Assert.Equal(404, (int)demo.StatusCode);
-        }
+        // AC-031 in the local profile: 401 without a token, 403 for a viewer and for an operator alike -
+        // disabled outside the demo profile - and 429 past the burst. 202 and 400 exist only in the
+        // demo profile, which is Phase 11.
+        var operatorToken = rig.Mint("api001-operator", "operator");
+        await ExpectPostAsync(401, $"{Api}/demo/faults", null);
+        await ExpectPostAsync(403, $"{Api}/demo/faults", viewer);
+        await ExpectPostAsync(403, $"{Api}/demo/faults", operatorToken);
+        var demoBurst = rig.Mint("burst-demo", "operator");
+        var demoStatuses = await Task.WhenAll(Enumerable.Range(0, 50).Select(_ => rig.PostAsync($"{Api}/demo/faults", demoBurst)));
+        Assert.Contains(demoStatuses, r => r.Status == 429);
 
-        Assert.Empty(rig.Contract.Uncovered(d => d.Template == "/demo/faults"));
+        Assert.Empty(rig.Contract.Uncovered(d => d.Template == "/demo/faults" && d.Status is 202 or 400));
         Assert.Empty(rig.Failures);
     }
 
@@ -411,8 +422,11 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         }
         while (cursor is not null);
 
+        // Exactly the page-1 rows, each once - none dropped (P4-COD-002) - plus at most the one later row
+        // whose key fell after the cursor: the older of the two arrivals. The newer one never appears.
         Assert.Equal(seen.Count, seen.Distinct().Count());
         Assert.Subset(seen.ToHashSet(), existing.ToHashSet());
+        Assert.Equal(existing.Count + 1, seen.Count);
 
         // Range: from inclusive, to exclusive.
         var range = $"{Api}/equipment/{eq}/decisions?from={At(start.AddMinutes(5))}&to={At(start.AddMinutes(15))}&limit=500";

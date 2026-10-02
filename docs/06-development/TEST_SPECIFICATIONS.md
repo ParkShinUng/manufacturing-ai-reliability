@@ -512,9 +512,12 @@ with valid values, body valid against the selected schema, `uuid` and `date-time
 while the broker is stopped (OD-018) · an equipment with no control outcome has `controlMode: null`,
 and an equipment with no health record makes the health fields `null`, never a guessed value
 (OD-012) · `/platform/health` still answers while PostgreSQL is stopped · the coverage check finds
-every documented `(path, method, status)` exercised. **Excluded and recorded:** `POST /demo/faults`
-— the route is **absent** outside the demo profile, and the demo profile and its criterion are Phase 11; in
-Phase 4 the suite asserts only that the route does not exist.
+every documented `(path, method, status)` exercised. `POST /demo/faults` in the `local` profile gives
+`401`, `403` (a viewer, and an operator alike — disabled outside the demo profile) and `429`. **Excluded
+and recorded:** its `202` and `400`, which only the demo profile produces — Phase 11. *(Until
+2026-10-02 the whole route was excluded and asserted absent; Codex's Phase 4 verification,
+`P4-COD-001`, pointed out that AC-031 makes it 403 outside the demo profile and absent only from the
+production-like build.)*
 
 
 **Automated 2026-10-01** — `OperationsApiTests`, the API on Kestrel over a projected store, every

@@ -67,6 +67,38 @@ public sealed class OperationsHostTests(ProjectionRig rig) : IClassFixture<Proje
     }
 
     [Fact]
+    public async Task TheDemoProfileIsRefused_AndProductionLikeHasNoDemoRoute_AndNeedsItsOwnMigrationLogin()
+    {
+        var token = Mint("profiles");
+        var settings = Settings(await rig.Postgres.CreateDatabaseAsync());
+
+        settings["Mair:Profile"] = "demo";
+        Assert.Contains("Phase 11", (await Assert.ThrowsAsync<InvalidOperationException>(() => BuildAsync(settings))).Message);
+
+        // Production-like: the migration owner must be named separately (OD-023)...
+        settings["Mair:Profile"] = "production-like";
+        Assert.Contains("OperationsMigrations", (await Assert.ThrowsAsync<InvalidOperationException>(() => BuildAsync(settings))).Message);
+
+        // ...and POST /demo/faults is not mapped at all (AC-031): no route, not a disabled one.
+        settings["ConnectionStrings:OperationsMigrations"] = settings["ConnectionStrings:Operations"];
+        var app = await BuildAsync(settings);
+        await app.StartAsync();
+        try
+        {
+            var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            using var http = new HttpClient { BaseAddress = new Uri(address) };
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await http.PostAsync("/api/v1/demo/faults", new StringContent("{}"));
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task AMigrationThatDoesNotMatchStopsStartupBeforeAnythingListens()
     {
         Mint("setup");

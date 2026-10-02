@@ -57,7 +57,12 @@ public static partial class OperationsApi
         return services;
     }
 
-    public static WebApplication MapOperationsApi(this WebApplication app, NpgsqlDataSource db, IProjectionStatus projection, IKafkaProbe kafka, TimeProvider time)
+    public const string LocalProfile = "local";
+    public const string DemoProfile = "demo";
+    public const string ProductionLikeProfile = "production-like";
+
+    public static WebApplication MapOperationsApi(this WebApplication app, NpgsqlDataSource db, IProjectionStatus projection, IKafkaProbe kafka,
+        TimeProvider time, string profile = LocalProfile)
     {
         var read = new ReadModel(db);
         var breaker = new CircuitBreaker(time);
@@ -72,7 +77,7 @@ public static partial class OperationsApi
         app.Use(async (context, next) =>
         {
             if (context.Request.Path.StartsWithSegments(Base) && !context.Request.Path.StartsWithSegments(Base + "/platform/health")
-                && AllTopics.Any(t => projection.LastCaughtUp(t) is null))
+                && !context.Request.Path.StartsWithSegments(Base + "/demo") && AllTopics.Any(t => projection.LastCaughtUp(t) is null))
             {
                 await Problems.WriteAsync(context, StatusCodes.Status503ServiceUnavailable, "Service Unavailable",
                     "the read models are still being built: not every projector has caught up yet");
@@ -81,6 +86,15 @@ public static partial class OperationsApi
 
             await next(context);
         });
+
+        // AC-031: absent from the production-like build - not mapped at all - and 403 in every other
+        // profile until the demo profile exists (Phase 11; OperationsHost refuses to start in it).
+        if (profile != ProductionLikeProfile)
+        {
+            app.MapPost(Base + "/demo/faults", () => Problems.Result(StatusCodes.Status403Forbidden, "Forbidden",
+                    "demo fault injection is disabled outside the demo profile (AC-031)"))
+                .RequireAuthorization(OperationsAuth.OperatePolicy);
+        }
 
         var api = app.MapGroup(Base).RequireAuthorization(OperationsAuth.ReadPolicy);
 

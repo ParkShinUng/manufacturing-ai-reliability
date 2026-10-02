@@ -29,7 +29,17 @@ public static class OperationsHost
 
         var runtime = config.GetConnectionString("Operations")
             ?? throw new InvalidOperationException("configuration key 'ConnectionStrings:Operations' is required (OPERATIONS_API.md §15)");
-        var profile = config["Mair:Profile"] ?? "local";
+        var profile = config["Mair:Profile"] ?? OperationsApi.LocalProfile;
+        if (profile == OperationsApi.DemoProfile)
+        {
+            // The demo profile needs the simulator admin API behind POST /demo/faults (AC-031).
+            throw new InvalidOperationException("Mair:Profile 'demo' arrives in Phase 11 (AC-031); use 'local' or 'production-like'");
+        }
+
+        if (profile is not (OperationsApi.LocalProfile or OperationsApi.ProductionLikeProfile))
+        {
+            throw new InvalidOperationException($"Mair:Profile '{profile}' is not one of local, demo, production-like (OPERATIONS_API.md §15)");
+        }
         var owner = config.GetConnectionString("OperationsMigrations")
             ?? (profile == "production-like"
                 ? throw new InvalidOperationException("configuration key 'ConnectionStrings:OperationsMigrations' is required in production-like (OPERATIONS_API.md §15)")
@@ -75,7 +85,7 @@ public static class OperationsHost
         builder.Services.AddOperationsApi();
 
         var app = builder.Build();
-        app.MapOperationsApi(reader, new ProjectorStatus(projector), new KafkaProbe(admin, TimeProvider.System), TimeProvider.System);
+        app.MapOperationsApi(reader, new ProjectorStatus(projector), new KafkaProbe(admin, TimeProvider.System), TimeProvider.System, profile);
         return app;
     }
 

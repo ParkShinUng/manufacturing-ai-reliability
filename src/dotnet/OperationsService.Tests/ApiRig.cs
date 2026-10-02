@@ -138,6 +138,32 @@ public sealed class ApiRig : IAsyncLifetime
     }
 
     /// <summary>A GET through the harness. Any mismatch with the contract is recorded and fails the test.</summary>
+    /// <summary>A POST of a valid fault-injection body through the harness, as <see cref="GetAsync"/>.</summary>
+    public async Task<(int Status, string Body)> PostAsync(string path, string? token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent("""{"equipmentId":"eq-001","profile":"BEARING_DEGRADATION"}""", System.Text.Encoding.UTF8, "application/json"),
+        };
+        if (token is not null)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        using var response = await Http.SendAsync(request);
+        var body = await response.Content.ReadAsByteArrayAsync();
+        var headers = response.Headers.Concat(response.Content.Headers).ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
+        var failures = Contract.Check(new ObservedResponse("POST", path.Replace("/api/v1", "", StringComparison.Ordinal), (int)response.StatusCode,
+            response.Content.Headers.ContentType?.ToString(), headers, body));
+        lock (Failures)
+        {
+            Failures.AddRange(failures);
+        }
+
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
+        return ((int)response.StatusCode, System.Text.Encoding.UTF8.GetString(body));
+    }
+
     public async Task<(int Status, HttpResponseMessage Response, string Body)> GetAsync(string path, string? token)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
