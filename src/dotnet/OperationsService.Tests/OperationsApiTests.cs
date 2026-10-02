@@ -1,3 +1,4 @@
+using Mair.OperationsService.Api;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -151,6 +152,10 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         }
 
         // FR-050: the REJECT's reason is active; the staleness header reads 0 while caught up.
+        // A caught-up check that fails - under the burst above, a watermark query can time out -
+        // rightly makes the header grow. What is asserted here is the mapping: freshly confirmed
+        // caught up, the header reads 0. Failed once without this wait; cause not proven.
+        await rig.CaughtUpAsync();
         var detail = await rig.GetAsync($"{Api}/equipment/{seeded.Equipment}", viewer);
         using (var full = JsonDocument.Parse(detail.Body))
         {
@@ -158,7 +163,8 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
             Assert.Equal("SAFE_FALLBACK", full.RootElement.GetProperty("controlMode"u8).GetString());
         }
 
-        Assert.Equal("0", detail.Response.Headers.GetValues("X-Data-Staleness-Seconds").Single());
+        Assert.True(detail.Response.Headers.GetValues("X-Data-Staleness-Seconds").Single() == "0", string.Join(" | ",
+            rig.Projector.Consumers.Select(c => $"{c.Topic}: caughtUp={c.CaughtUp} last={c.LastCaughtUpUtc:O} outage={c.Outage} processed={c.Processed}")));
 
         using (var health = JsonDocument.Parse((await rig.GetAsync($"{Api}/platform/health", viewer)).Body))
         {
@@ -181,6 +187,7 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
         finally
         {
             await rig.Infra.Postgres.StartAsync();
+            await rig.BreakerClosedAsync(viewer);
         }
 
         // The demo route is absent outside the demo profile (Phase 11): not part of the contract run here.
@@ -191,6 +198,82 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
 
         Assert.Empty(rig.Contract.Uncovered(d => d.Template == "/demo/faults"));
         Assert.Empty(rig.Failures);
+    }
+
+    [Fact]
+    public async Task FailDb001_AStoreOutageLosesNothing_TheBreakerOpens_AndHealthStillAnswers()
+    {
+        await SeedAsync();
+        var viewer = rig.Mint("faildb001", "viewer");
+        var eq = ProjectionRig.NewEquipment();
+        var telemetry = rig.Projector.Consumers.Single(c => c.Topic == "factory.telemetry.v1");
+        var deadLetteredBefore = telemetry.DeadLettered;
+
+        await rig.Infra.Postgres.StopAsync();
+        try
+        {
+            // Five readings produced while the store is down.
+            for (var i = 0; i < 5; i++)
+            {
+                var t = ProjectionRig.Example("telemetry.healthy");
+                var at = At(new DateTime(2026, 10, 2, 1, 0, i, 100, DateTimeKind.Utc));
+                t["eventId"] = ProjectionRig.NewId();
+                t["equipmentId"] = eq;
+                t["eventTimeUtc"] = at;
+                t["occurredAtUtc"] = at;
+                t["sequence"] = i;
+                t["correlationId"] = ProjectionRig.NewId();
+                await ProjectionRig.ProduceAsync(rig.Producer, "factory.telemetry.v1", eq, t);
+            }
+
+            var deadline = DateTime.UtcNow.AddSeconds(60);
+            while (telemetry.Outage is null)
+            {
+                Assert.True(DateTime.UtcNow < deadline, "the projector never reported the outage");
+                await Task.Delay(100);
+            }
+
+            // Five unavailable answers open the breaker; the sixth is refused without asking the store.
+            for (var i = 0; i < CircuitBreaker.Threshold; i++)
+            {
+                await ExpectAsync(503, $"{Api}/equipment/{eq}/decisions", viewer);
+            }
+
+            var refused = await rig.GetAsync($"{Api}/equipment/{eq}/decisions", viewer);
+            Assert.Equal(503, refused.Status);
+            Assert.Contains("circuit open", refused.Body);
+
+            Assert.Equal(200, (await rig.GetAsync($"{Api}/platform/health", viewer)).Status);
+        }
+        finally
+        {
+            await rig.Infra.Postgres.StartAsync();
+
+            // The test's own queries share the projector's pool; start them on fresh connections.
+            rig.Db.Clear();
+        }
+
+        await rig.CaughtUpAsync();
+        Assert.Null(telemetry.Outage);
+        Assert.Equal(deadLetteredBefore, telemetry.DeadLettered);
+        await using (var count = rig.Db.CreateCommand("SELECT count(*) FROM operations.telemetry_reading_1s WHERE equipment_id = $1"))
+        {
+            count.Parameters.Add(new NpgsqlParameter { Value = eq });
+            Assert.Equal(5L, await count.ExecuteScalarAsync());
+        }
+
+        // The read models after the outage equal a rebuild of the same topics into an empty store.
+        await using var fresh = await rig.Infra.MigratedAsync();
+        using (var projector = rig.Infra.Projector(fresh, rig.Producer))
+        {
+            await ProjectionRig.CatchUpAsync(projector);
+        }
+
+        // Only what came from Kafka: TRACE-001 wrote readings straight to the table (provenance 'seed'),
+        // which no replay can - or should - reproduce.
+        static string FromKafka(string dump) => string.Join('\n', dump.Split('\n').Where(l => !l.Contains("\tseed\t", StringComparison.Ordinal)));
+        Assert.Equal(FromKafka(await ProjectionRig.DumpAsync(fresh)), FromKafka(await ProjectionRig.DumpAsync(rig.Db)));
+        await rig.BreakerClosedAsync(viewer);
     }
 
     [Fact]

@@ -13,6 +13,13 @@ namespace Mair.EdgeGateway.Tests;
 /// </summary>
 public sealed class ModbusOverTheWireTests : IAsyncLifetime
 {
+    /// <summary>
+    /// For tests about what is read, not how fast: the production 250 ms (§2.7) is a claim about a
+    /// warm gateway, and a busy test host missed it (2026-10-02) - the same defect the framing
+    /// tests had in CI (CLD-P3-004). Tests about the timeout itself keep the production value.
+    /// </summary>
+    internal static readonly TimeSpan Patient = TimeSpan.FromSeconds(5);
+
     private sealed class FakeEquipment : Protocols.IEquipmentAccess
     {
         private readonly Sim.RawSample?[] _samples = new Sim.RawSample?[2];
@@ -81,7 +88,7 @@ public sealed class ModbusOverTheWireTests : IAsyncLifetime
     [Fact]
     public async Task TheGatewayReadsAndDecodesARealBlock()
     {
-        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort);
+        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort, Patient);
         await client.ConnectAsync();
 
         var frame = await client.ReadAsync(0);
@@ -103,7 +110,7 @@ public sealed class ModbusOverTheWireTests : IAsyncLifetime
     {
         // Equipment 1 has a null torque reading. Modbus has no null, so the contract carries it in
         // the quality bitmap and the gateway turns a clear bit into null + SENSOR_MISSING.
-        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort);
+        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort, Patient);
         await client.ConnectAsync();
 
         var frame = await client.ReadAsync(1);
@@ -121,7 +128,7 @@ public sealed class ModbusOverTheWireTests : IAsyncLifetime
     [Fact]
     public async Task EachEquipmentIsReachableAtItsOwnUnitIdAndBase()
     {
-        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort);
+        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort, Patient);
         await client.ConnectAsync();
 
         Assert.Equal(100, (await client.ReadAsync(0)).OperationRatePct, 1);
@@ -196,7 +203,7 @@ public sealed class ModbusOverTheWireTests : IAsyncLifetime
     public async Task ReconnectNeedsNoProcessRestart()
     {
         // FR-004 / R-01. The client replaces its own session; nothing outside it restarts.
-        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort);
+        using var client = new ModbusTelemetryClient("127.0.0.1", _server.ActualReadOnlyPort, Patient);
         await client.ConnectAsync();
         Assert.Equal(1800, (await client.ReadAsync(0)).Rpm, 1);
 

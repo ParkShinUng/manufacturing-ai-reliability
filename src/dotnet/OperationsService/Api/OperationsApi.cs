@@ -60,6 +60,7 @@ public static partial class OperationsApi
     public static WebApplication MapOperationsApi(this WebApplication app, NpgsqlDataSource db, IProjectionStatus projection, IKafkaProbe kafka, TimeProvider time)
     {
         var read = new ReadModel(db);
+        var breaker = new CircuitBreaker(time);
 
         app.UseAuthentication();
         app.UseRateLimiter();
@@ -84,7 +85,7 @@ public static partial class OperationsApi
         var api = app.MapGroup(Base).RequireAuthorization(OperationsAuth.ReadPolicy);
 
         api.MapGet("/equipment", (HttpContext http, string? limit, string? cursor, string? state, string? controlMode) =>
-            Serve(http, projection, time, EquipmentTopics, async ct =>
+            Serve(http, db, breaker, projection, time, EquipmentTopics, async ct =>
             {
                 var after = cursor is null ? null : Cursor.Decode(cursor, "e")["e"];
                 return await read.EquipmentListAsync(Limit(limit), after, OneOf(state, EquipmentStates, "state"),
@@ -92,24 +93,24 @@ public static partial class OperationsApi
             }));
 
         api.MapGet("/equipment/{equipmentId}", (HttpContext http, string equipmentId) =>
-            Serve(http, projection, time, EquipmentTopics, ct => read.EquipmentDetailAsync(EquipmentId(equipmentId), ct)));
+            Serve(http, db, breaker, projection, time, EquipmentTopics, ct => read.EquipmentDetailAsync(EquipmentId(equipmentId), ct)));
 
         api.MapGet("/equipment/{equipmentId}/decisions", (HttpContext http, string equipmentId, string? from, string? to, string? limit, string? cursor, string? decision) =>
-            Serve(http, projection, time, ["factory.safety-decisions.v1"], ct =>
+            Serve(http, db, breaker, projection, time, ["factory.safety-decisions.v1"], ct =>
                 read.DecisionsAsync(EquipmentId(equipmentId), Time(from, "from"), Time(to, "to"), OneOf(decision, DecisionKinds, "decision"),
                     Limit(limit), KeysetAfter(cursor), ct)));
 
         api.MapGet("/equipment/{equipmentId}/commands", (HttpContext http, string equipmentId, string? from, string? to, string? limit, string? cursor) =>
-            Serve(http, projection, time, ["factory.control-outcomes.v1"], ct =>
+            Serve(http, db, breaker, projection, time, ["factory.control-outcomes.v1"], ct =>
                 read.CommandsAsync(EquipmentId(equipmentId), Time(from, "from"), Time(to, "to"), Limit(limit), KeysetAfter(cursor), ct)));
 
         api.MapGet("/trace/{correlationId}", (HttpContext http, string correlationId) =>
-            Serve(http, projection, time, ["factory.predictions.v1", "factory.safety-decisions.v1", "factory.control-outcomes.v1", "factory.telemetry.v1"],
+            Serve(http, db, breaker, projection, time, ["factory.predictions.v1", "factory.safety-decisions.v1", "factory.control-outcomes.v1", "factory.telemetry.v1"],
                 ct => read.TraceAsync(Guid.TryParseExact(correlationId, "D", out var id) ? id : throw new BadRequestException("correlationId is not a uuid"), ct)));
 
         // Cast: a lambda taking only HttpContext would bind as a RequestDelegate and drop the result.
         api.MapGet("/models", (Delegate)((HttpContext http) =>
-            Serve(http, projection, time, ["factory.model-deployments.v1"], async ct => (byte[]?)await read.ModelsAsync(time.GetUtcNow(), ct))));
+            Serve(http, db, breaker, projection, time, ["factory.model-deployments.v1"], async ct => (byte[]?)await read.ModelsAsync(time.GetUtcNow(), ct))));
 
         api.MapGet("/platform/health", async (HttpContext http) =>
         {
@@ -155,20 +156,38 @@ public static partial class OperationsApi
     /// <c>400</c> for a bad parameter, <c>503</c> when PostgreSQL does not answer — and the staleness
     /// header on every success.
     /// </summary>
-    private static async Task<IResult> Serve(HttpContext http, IProjectionStatus projection, TimeProvider time, string[] topics, Func<CancellationToken, Task<byte[]?>> read)
+    private static async Task<IResult> Serve(HttpContext http, NpgsqlDataSource db, CircuitBreaker breaker, IProjectionStatus projection, TimeProvider time, string[] topics, Func<CancellationToken, Task<byte[]?>> read)
     {
+        if (!breaker.TryEnter())
+        {
+            return Problems.Result(StatusCodes.Status503ServiceUnavailable, "Service Unavailable",
+                "the operational store failed 5 times in a row; it is not asked again for 30 s (circuit open, OD-022)");
+        }
+
         byte[]? body;
         try
         {
             body = await read(http.RequestAborted);
+            breaker.Success();
         }
         catch (BadRequestException ex)
         {
+            // Refused before the store was asked: says nothing about the store.
+            breaker.Neutral();
             return Problems.Result(StatusCodes.Status400BadRequest, "Bad Request", ex.Message);
         }
         catch (Exception ex) when (Unavailable(ex) || (ex is OperationCanceledException && !http.RequestAborted.IsCancellationRequested))
         {
+            breaker.Failure();
+
+            // Broken connections would otherwise each fail once more after the store is back.
+            db.Clear();
             return Problems.Result(StatusCodes.Status503ServiceUnavailable, "Service Unavailable", "the operational store did not answer; control is unaffected (F12)");
+        }
+        catch
+        {
+            breaker.Neutral();
+            throw;
         }
 
         if (body is null)
@@ -184,17 +203,8 @@ public static partial class OperationsApi
         return Results.Bytes(body, "application/json");
     }
 
-    /// <summary>
-    /// The store not answering - not the store answering with an error. A <c>PostgresException</c> is
-    /// the server rejecting a statement, which is a defect here and must not be dressed as an outage;
-    /// only connection-class failures (SQLSTATE 08, 57P) count, plus timeouts and client-side failures.
-    /// </summary>
-    internal static bool Unavailable(Exception ex) => ex switch
-    {
-        PostgresException pg => pg.SqlState.StartsWith("08", StringComparison.Ordinal) || pg.SqlState.StartsWith("57P", StringComparison.Ordinal),
-        NpgsqlException or TimeoutException => true,
-        _ => false,
-    };
+    /// <summary>The store not answering, as OD-022 lists it - a SQL error is a defect, not an outage.</summary>
+    internal static bool Unavailable(Exception ex) => Database.StoreFailures.IsUnavailable(ex);
 
     private static int Limit(string? limit)
     {

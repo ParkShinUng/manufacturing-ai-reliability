@@ -165,8 +165,10 @@ the applied rate does not move · any late command carrying a pre-replay epoch i
 ### PROJ-001 — read models rebuild from a replay → AC-046 *(Phase 4)*
 **Trigger:** replay a known offset range into the projection consumer groups.
 **Assert:** every read model's **canonical dump** (`OPERATIONAL_DATA.md` §9a) is byte-identical to
-its pre-replay dump · only rows whose provenance lies in the replayed range are replaced, and rows
-outside it are untouched (OD-014) · the rebuild is idempotent under a second replay of the same
+its pre-replay dump · in `telemetry_reading_1s` and `prediction`, only rows whose provenance lies in
+the replayed range are deleted and restored, and rows outside it are untouched (OD-014); the audit
+tables and the tables of compacted topics lose nothing — a replay only re-inserts what is missing
+(OD-023) · the rebuild is idempotent under a second replay of the same
 range · no projection writes outside its own tables.
 
 
@@ -196,6 +198,10 @@ rollback trigger fires · quarantine propagates · cohort returns to the Product
 
 ### FAIL-DB-001 — PostgreSQL outage *(new)*
 **Trigger:** stop PostgreSQL for 60 s.
+**Phase 4 asserts (OD-022):** records produced during the outage are projected after it, in order,
+with nothing dead-lettered · every read route answers `503`, at once after five failures (the
+circuit breaker), and health still answers · after recovery the read models equal a rebuild's
+canonical dump. The watchdog clause is Phase 7.
 **Assert:** new commands rejected · **the watchdog still fires and still applies fallback** (it needs
 only static config) · Operations API returns 503 · no data corruption on recovery · projections
 resume from committed offsets.
@@ -402,6 +408,17 @@ PostgreSQL. That proves what Phase 4 owns: storage, rebuild and query. It does *
 the later producers link up; that claim is the live-chain criterion, verified in Phase 7 (OD-011).
 
 
+### KAFKA-004 — a dependency outage stalls in order and loses nothing → AC-027 *(added 2026-10-02, OD-022)*
+**Setup:** a real broker; a topic with records at offsets N, N+1, N+2 on one partition and records
+on a second partition; a consumer on the shared component whose handler throws
+`DependencyUnavailableException` for a while, then succeeds.
+**Assert:** no record reaches the DLQ · N is handled first and N+1 after it — nothing on any
+partition is handled during the outage · the committed offset does not pass N until N succeeds ·
+the consumer reports the outage (partition, offset, exception type, attempts) and is not caught up
+while it lasts · the waits follow 1 s doubling to 30 s · a handler that throws anything else still
+dead-letters after three attempts · if the partition is revoked during the outage, N is not
+committed and the next owner receives it.
+
 **Automated 2026-10-01** — `TombstoneTests`, real broker, topics of their own per test: the four
 assertions above, plus the register allowing tombstones on `factory.equipment-states.v1` alone.
 
@@ -437,8 +454,11 @@ paging by keyset cursor returns every record that existed when the first page wa
 **once**, with inserts arriving between pages; a record inserted later appears once or not at all,
 by where its key falls against the cursor, and never twice (`OPERATIONS_API.md` §10a) ·
 mode-transition outcomes come back with `fromMode` and `modeTransitionId` · the retention job drops
-a partition only when its **upper bound** is older than the table's retention (90 d decisions and
-outcomes, 1 y mode history), never one that still holds a record inside it (OD-018) · a range
+a partition only when its **upper bound** is older than the table's retention (30 d readings and
+predictions, 90 d decisions, 1 y control outcomes and state history; OD-023), never one that still
+holds a record inside it (OD-018) · no runtime role can UPDATE or DELETE a `safety_decision` or
+`control_outcome` row, shown both from the catalogue and by attempting it · a later record with an
+audit row's identity, even with a different payload, leaves the first row unchanged (first-wins) · a range
 rebuild (`PROJ-001`) leaves audit rows **outside** the replayed range untouched, so history past
 Kafka's 7 d survives it (OD-014) · a control outcome with `modeTransitionId` and no `fromMode` is
 DLQ'd, not stored (the contract, via the shared component) · an equipment-state **tombstone** keeps

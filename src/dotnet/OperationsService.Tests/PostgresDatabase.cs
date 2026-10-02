@@ -43,7 +43,13 @@ public sealed class PostgresDatabase : IAsyncLifetime
     /// <summary>Stops the server: FAIL-DB-001 and API-001's 503. The port and data survive a restart.</summary>
     public Task StopAsync() => _container.StopAsync();
 
-    public Task StartAsync() => InitializeAsync();
+    public async Task StartAsync()
+    {
+        await InitializeAsync();
+
+        // Every pool still holds connections to the server that was stopped.
+        NpgsqlConnection.ClearAllPools();
+    }
 
     public async Task InitializeAsync()
     {

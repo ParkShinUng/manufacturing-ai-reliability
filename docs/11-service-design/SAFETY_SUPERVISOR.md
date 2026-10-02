@@ -82,7 +82,8 @@ is cheap and safe.
 2. consume `factory.model-deployments.v1` from **earliest** (compacted) until caught up;
 3. consume `factory.equipment-states.v1` from **earliest** (compacted) until caught up — through
    the shared consumer, where a **tombstone removes the equipment** from the current-state view
-   (OD-021), the same rule the operations projector applies;
+   (OD-021), the same rule the operations projector applies. Whether it uses the shared consumer's
+   dependency-outage path (OD-022) is Phase 6's decision, and must not weaken reject-first-then-DLQ;
 4. **`seekToEnd` on `factory.predictions.v1`** — discard the downtime backlog (DEC-002, §6.1 of
    `KAFKA_TOPOLOGY_AND_SEMANTICS.md`);
 5. `AcquireControlLease` for all equipment — this increments `controlEpoch`, fencing anything issued

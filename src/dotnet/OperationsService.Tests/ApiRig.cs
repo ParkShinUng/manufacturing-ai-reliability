@@ -112,6 +112,20 @@ public sealed class ApiRig : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// After a store outage: waits out the breaker (OD-022) until a database route answers 200 again,
+    /// so the next test does not inherit an open circuit.
+    /// </summary>
+    public async Task BreakerClosedAsync(string token)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while ((await GetAsync("/api/v1/models", token)).Status != 200)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "the circuit breaker never closed");
+            await Task.Delay(1000);
+        }
+    }
+
     /// <summary>A GET through the harness. Any mismatch with the contract is recorded and fails the test.</summary>
     public async Task<(int Status, HttpResponseMessage Response, string Body)> GetAsync(string path, string? token)
     {

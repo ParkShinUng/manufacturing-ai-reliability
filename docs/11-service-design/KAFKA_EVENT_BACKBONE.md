@@ -29,6 +29,11 @@ Its scope is exactly those rules and nothing more:
   allows one, and is an invalid record everywhere else (OD-021, added 2026-10-01 — a rule from the
   contract, `OD-008`, not from a consumer's convenience).
 
+- a handler that throws `DependencyUnavailableException` stalls its records in order — paused,
+  sought back, retried with capped backoff, never dead-lettered, abandoned uncommitted on revocation
+  — and the consumer reports the outage (OD-022, added 2026-10-02: a store outage must not empty
+  the projections into the DLQ, `OPERATIONAL_DATA.md` §11).
+
 It also reports when it was last **caught up** (OD-018): checked by its own loop after a poll that
 returned nothing, against the high watermark of every assigned partition, using its position — or,
 before it has consumed anything there, the group's committed offset, then the reset policy. The

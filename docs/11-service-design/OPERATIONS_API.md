@@ -151,7 +151,8 @@ use `__` for `:`. Startup fails, naming the key, if a required one is missing.
 | Key | Required | Meaning |
 |---|---|---|
 | `Mair:Profile` | no, default `local` | `local`, `demo` or `production-like`. Phase 4 serves the same routes in every profile; the demo route arrives in Phase 11 |
-| `ConnectionStrings:Operations` | **yes** | Npgsql connection string. The service sets `Command Timeout` to **3 s** whatever it says (§12) |
+| `ConnectionStrings:Operations` | **yes** | the **runtime** login: granted `mair_ops_projector`, `mair_ops_reader` and `mair_ops_retention`, and each data source sets its own role on connect (OD-023). The service sets `Command Timeout` to **3 s** whatever it says (§12) |
+| `ConnectionStrings:OperationsMigrations` | in production-like | the schema owner, used only to migrate at startup. Defaults to the runtime string in `local` and `demo`, where one login is both; production-like must set it, so the runtime login never holds the owner role |
 | `Mair:Kafka:BootstrapServers` | **yes** | the brokers the projector and the health probe use |
 | `Mair:Contracts` | **yes** | the directory of the contract schemas, `contracts/jsonschema/v1` |
 | `Mair:Tokens:PublicKeyFiles` | **yes** | one or more public ES256 JWK files (OD-017); a private key here fails startup |

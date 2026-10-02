@@ -111,7 +111,7 @@ public sealed class CrossProtocolTests : IAsyncLifetime
     {
         _opcUaServer.NodeManager.RefreshAll();
 
-        using var modbusClient = new ModbusTelemetryClient("127.0.0.1", _modbusServer.ActualReadOnlyPort);
+        using var modbusClient = new ModbusTelemetryClient("127.0.0.1", _modbusServer.ActualReadOnlyPort, ModbusOverTheWireTests.Patient);
         await modbusClient.ConnectAsync();
         var modbusFrame = await modbusClient.ReadAsync(0);
 
@@ -136,7 +136,7 @@ public sealed class CrossProtocolTests : IAsyncLifetime
     {
         _opcUaServer.NodeManager.RefreshAll();
 
-        using var modbusClient = new ModbusTelemetryClient("127.0.0.1", _modbusServer.ActualReadOnlyPort);
+        using var modbusClient = new ModbusTelemetryClient("127.0.0.1", _modbusServer.ActualReadOnlyPort, ModbusOverTheWireTests.Patient);
         await modbusClient.ConnectAsync();
         var modbusFrame = await modbusClient.ReadAsync(0);
 

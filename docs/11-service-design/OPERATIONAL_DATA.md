@@ -67,6 +67,10 @@ Each schema's migrations are applied at deploy by its owner (OD-016). A rebuild 
 operation** (OD-014): rewind the projector group over an offset range and replace only the rows
 whose provenance (`source_topic`, `source_partition`, `source_offset`) lies in that range. **No
 rebuild truncates a table**; `control_state` and every row outside the range are untouched.
+**Rows are deleted only from `telemetry_reading_1s` and `prediction`** (OD-023): their topics keep
+every record within retention, so a replay restores what was deleted. The audit tables are
+insert-only, and the tables fed by compacted topics would not get their history back; a replay into
+them re-inserts only what is missing.
 
 ## 9a. Canonical dump — what "byte-identical" means
 
@@ -112,12 +116,15 @@ in memory across a restart. No statistics are computed here; 1 s aggregate featu
 ## 11. Failure behaviour
 | Failure | Behaviour |
 |---|---|
-| Unavailable | projections pause and resume from committed offsets; Operations API returns 503; **control watchdog unaffected** |
-| Disk pressure | retention job drops the oldest aggregate partitions first |
+| Unavailable | projections pause on the record that failed and resume in order (OD-022) — nothing dead-lettered, nothing committed past it; Operations API returns 503, at once while its circuit breaker is open; **control watchdog unaffected** |
+| Disk pressure | not handled in Phase 4: nothing measures it, and dropping data on a guessed threshold is worse than the retention job's fixed rule. Phase 8 owns a disk metric and its alert (OD-022) |
 | Migration failure | deploy aborts; service does not start against a half-migrated schema |
 
 ## 12. Timeout / retry / idempotency / ordering
-Query timeout 3 s; 2–3 retries; circuit breaker opens after 5 consecutive failures for 30 s.
+Query timeout 3 s. **No read retries**: one attempt, `503` on an unavailable store. Projection
+writes wait out an outage on the record that failed (OD-022). The API's circuit breaker, per
+instance: 5 consecutive *unavailable* results open it for 30 s, then one probe request; what counts
+as unavailable is listed in OD-022 — a SQL error is a defect, not an outage.
 All projection writes idempotent. Ordering per equipment preserved by partition consumption.
 
 ## 13. Backpressure
@@ -127,13 +134,20 @@ Projector batches up to 500 records or 1 s; bounded in-flight.
 Projections resume from offsets; a full rebuild is an operator action with a documented runbook.
 
 ## 15. Configuration
-Retention: per-second readings 30 d, decommissions indefinite (an input to the current view), predictions 30 d, decisions/outcomes 90 d, mode history 1 y,
+Retention (OD-023), by whole partition: per-second readings 30 d, predictions 30 d, safety decisions 90 d, control outcomes **1 y** (mode transitions among them), equipment state history 1 y, decommissions indefinite (an input to the current view). Run at start and hourly by `operations.drop_expired_partitions()` as `mair_ops_retention`. Earlier text, kept for the record: decisions/outcomes 90 d, mode history 1 y,
 `control_state` indefinite.
 
 ## 16. Security
 Least-privilege roles: projector write-only to projection tables; API read-only; control-service
 read/write only to its two tables. Roles follow the schema boundary (OD-016). No shared superuser
 at runtime.
+
+**Implemented for `operations` (OD-023, migration `0003`)**: group roles without login —
+`mair_ops_projector` INSERT only on `safety_decision` and `control_outcome`, INSERT/UPDATE/DELETE on
+the other projection tables; `mair_ops_reader` SELECT; `mair_ops_retention` EXECUTE on
+`drop_expired_partitions` and nothing else. The runtime login is granted these roles and each data
+source sets its own on connect, so the API's connection cannot write and the projector's cannot
+change an audit row. Migrations run on a separate connection string.
 
 ## 17. Observability
 `projection_lag_seconds`, `db_query_latency_seconds`, `db_errors_total`, `table_rows`,

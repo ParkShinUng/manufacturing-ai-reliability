@@ -65,11 +65,30 @@ public sealed partial class OpenApiContract
     }
 
     /// <summary>Documented responses no check has seen yet, minus recorded exclusions.</summary>
-    public IReadOnlyList<(string Template, string Method, int Status)> Uncovered(Func<(string Template, string Method, int Status), bool>? excluded = null) =>
-        Documented().Where(d => !_seen.Contains(d) && excluded?.Invoke(d) != true).OrderBy(d => d.Template).ThenBy(d => d.Status).ToList();
+    public IReadOnlyList<(string Template, string Method, int Status)> Uncovered(Func<(string Template, string Method, int Status), bool>? excluded = null)
+    {
+        lock (_gate)
+        {
+            return Documented().Where(d => !_seen.Contains(d) && excluded?.Invoke(d) != true).OrderBy(d => d.Template).ThenBy(d => d.Status).ToList();
+        }
+    }
 
-    /// <returns>Every mismatch; empty when the response conforms.</returns>
+    /// <summary>
+    /// Every mismatch; empty when the response conforms. Thread-safe: API-001 checks bursts of
+    /// concurrent responses, and the coverage set and schema cache are shared. Unsynchronised, a
+    /// burst once corrupted the coverage set (2026-10-02).
+    /// </summary>
     public IReadOnlyList<string> Check(ObservedResponse response)
+    {
+        lock (_gate)
+        {
+            return CheckUnderLock(response);
+        }
+    }
+
+    private readonly Lock _gate = new();
+
+    private IReadOnlyList<string> CheckUnderLock(ObservedResponse response)
     {
         ArgumentNullException.ThrowIfNull(response);
         var failures = new List<string>();

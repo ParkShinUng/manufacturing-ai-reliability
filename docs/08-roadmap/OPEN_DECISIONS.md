@@ -1250,7 +1250,7 @@ API answers it with a `500` that the contract harness reports, and the projector
 
 ---
 
-# OD-023 — OPEN — the projector rewrites and deletes audit records the security boundary says nobody may change
+# OD-023 — RESOLVED 2026-10-02 — option A — the projector rewrites and deletes audit records the security boundary says nobody may change
 
 > Raised 2026-10-02 while preparing the retention job (Phase 4 step 5). Data ownership, persistence
 > and a security boundary: Codex participation is mandatory.
@@ -1283,6 +1283,40 @@ built does not honour that:
 **Recommendation: A.** It makes the audit property true and enforced, keeps OD-014's determinism
 (first-wins in offset order is as deterministic as last-wins), and resolves the retention conflict by
 keeping more, never less.
+
+
+## Decision — A, with Codex's conditions, confirmed by the product owner (2026-10-02)
+
+Codex: `SOUND_WITH_CONDITIONS` (`reviews/phase-4/CODEX_OD-023_CHALLENGE_raw.md`). Applied:
+
+1. **Audit tables are insert-only, first-wins in offset order.** `safety_decision` and
+   `control_outcome` are written `ON CONFLICT DO NOTHING`: a later record with the same identity —
+   at another offset, even with a different payload — leaves the first row as it is. A rebuild into
+   an empty store replays the same order, so it keeps the same first rows. Tested with a conflicting
+   duplicate.
+2. **A range rebuild deletes only from tables a replay can restore** — `telemetry_reading_1s` and
+   `prediction`, fed by delete-retention topics. It never deletes from the audit tables, nor from the
+   tables fed by compacted topics (`equipment_state_history`, `equipment_decommission`,
+   `model_deployment`, `authorization_watermark`): compaction keeps only the latest record per key, so
+   a deleted history row would not come back. *(Found while applying this decision: the step 3 rebuild
+   deleted from all of them.)* Replaying a range into those tables re-inserts only what is missing.
+3. **Repairing an existing audit row is not a rebuild's job**: backup and restore, or an operator
+   procedure.
+4. **Retention, by whole partition**: `telemetry_reading_1s` and `prediction` 30 d; `safety_decision`
+   90 d; `control_outcome` **1 y whole** — mode transitions live there (OD-019) and must last a year,
+   so outcomes are kept a year too, which exceeds their 90 d; `equipment_state_history` 1 y;
+   `equipment_decommission` never. `SECURITY_BOUNDARIES.md` is amended to say so.
+5. **Roles for the `operations` schema only** (OD-016) — `control` is Phase 7's. Created by
+   migration `0003` as group roles without login: `mair_ops_projector` (INSERT on the audit tables;
+   INSERT, UPDATE, DELETE on the others), `mair_ops_reader` (SELECT), `mair_ops_retention` (EXECUTE
+   on one function, nothing else). No runtime role holds UPDATE or DELETE on an audit table.
+6. **Retention runs as `mair_ops_retention`**, through `operations.drop_expired_partitions(now)`,
+   a `SECURITY DEFINER` function owned by the migration owner that drops only partitions of the five
+   allow-listed tables whose upper bound is past that table's period. No row `DELETE`. The runtime
+   connection never holds the owner role: each data source sets its role on connect, and migrations
+   run on their own connection string.
+7. **Tests**: `AUDIT-001` expects the periods above and proves, from the catalogue and by attempt,
+   that no runtime role can UPDATE or DELETE an audit row.
 
 ---
 

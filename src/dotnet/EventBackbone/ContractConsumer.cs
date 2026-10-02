@@ -5,6 +5,16 @@ using Confluent.Kafka;
 namespace Mair.EventBackbone;
 
 /// <summary>
+/// Thrown by a handler when something it depends on is down — not when the record is wrong
+/// (<c>OD-022</c>). The shared consumer then waits the outage out on that record, in order, instead
+/// of counting it toward §9's three attempts and the DLQ. Never inferred: only this type does it.
+/// </summary>
+public sealed class DependencyUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
+
+/// <summary>An outage the consumer is waiting out: where it is stalled, on what, since when (OD-022).</summary>
+public sealed record DependencyOutage(TopicPartitionOffset At, string ExceptionType, string Reason, DateTimeOffset Since, int Attempts);
+
+/// <summary>
 /// The one consume path every consumer is built on (<c>OD-009</c>, <c>KAFKA_EVENT_BACKBONE.md</c> §2.1).
 /// <para>
 /// Its scope is the rules in <c>KAFKA_TOPOLOGY_AND_SEMANTICS.md</c> §9 and nothing more: validate
@@ -218,11 +228,16 @@ public sealed class ContractConsumer : IDisposable
             return false;
         }
 
+        // Before anything else: a consumer holding an unsettled record is not caught up, however long
+        // the handler takes (OD-022, P4-OD22-001).
+        Volatile.Write(ref _caughtUp, false);
+
+        var settled = true;
         if (record.Message.Value is null)
         {
             if (_tombstoneHandler is not null)
             {
-                await HandleAsync(record, _tombstoneHandler, cancellationToken);
+                settled = await HandleAsync(record, _tombstoneHandler, cancellationToken);
             }
             else
             {
@@ -241,8 +256,15 @@ public sealed class ContractConsumer : IDisposable
             }
             else
             {
-                await HandleAsync(record, _handler, cancellationToken);
+                settled = await HandleAsync(record, _handler, cancellationToken);
             }
+        }
+
+        if (!settled)
+        {
+            // Abandoned during an outage because the partition was revoked: not committed, not
+            // dead-lettered - the next owner reads it from the last committed offset.
+            return true;
         }
 
         _consumer.Commit(record);
@@ -351,33 +373,158 @@ public sealed class ContractConsumer : IDisposable
         }
     }
 
-    private async Task HandleAsync(
+    /// <returns><c>false</c> only when the record was abandoned uncommitted during an outage.</returns>
+    private async Task<bool> HandleAsync(
         ConsumeResult<string, byte[]> record, Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         DateTimeOffset? firstFailure = null;
 
         for (var attempt = 1; ; attempt++)
         {
+            Exception failure;
             try
             {
                 await handler(record, cancellationToken);
-                return;
+                return true;
+            }
+            catch (DependencyUnavailableException outage)
+            {
+                var (settled, other) = await WaitOutOutageAsync(record, handler, outage, cancellationToken);
+                if (other is null)
+                {
+                    return settled;
+                }
+
+                // The dependency came back and the record failed for a reason of its own: §9 from here.
+                failure = other;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
-                firstFailure ??= _time.GetUtcNow();
+                failure = ex;
+            }
 
-                if (attempt == MaxAttempts)
+            firstFailure ??= _time.GetUtcNow();
+
+            if (attempt == MaxAttempts)
+            {
+                await DeadLetterAsync(record, RejectionClass.HandlerFailed,
+                    $"{failure.GetType().Name}: {failure.Message}", attempt, firstFailure.Value);
+                return true;
+            }
+
+            // ±20 % jitter, as every retry in FAILURE_MODEL.md's rule is.
+            var wait = Backoff[attempt - 1] * (0.8 + (0.4 * _jitter()));
+            await _delay(wait, cancellationToken);
+        }
+    }
+
+    /// <summary>§9 / OD-022: 1 s doubling to 30 s between retries of a record held through an outage.</summary>
+    private static readonly TimeSpan MaxOutageBackoff = TimeSpan.FromSeconds(30);
+
+    private DependencyOutage? _outage;
+
+    /// <summary>The outage this consumer is waiting out, or <c>null</c>. Readable from any thread.</summary>
+    public DependencyOutage? Outage => Volatile.Read(ref _outage);
+
+    /// <summary>Handler retries made while waiting out outages, over the consumer's life.</summary>
+    public long OutageRetries => Interlocked.Read(ref _outageRetries);
+
+    private long _outageRetries;
+
+    /// <summary>
+    /// Holds the record and retries it until the dependency answers (OD-022). Every assigned
+    /// partition is paused, so nothing after the record - on its partition or any other - is
+    /// processed first; the consumer keeps polling, so the group neither evicts it nor stalls a
+    /// rebalance. If the record's partition is revoked, the record is abandoned uncommitted.
+    /// </summary>
+    /// <returns>Settled, abandoned, or the different exception the handler threw once the dependency was back.</returns>
+    private async Task<(bool Settled, Exception? Other)> WaitOutOutageAsync(
+        ConsumeResult<string, byte[]> record, Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handler,
+        DependencyUnavailableException first, CancellationToken cancellationToken)
+    {
+        var since = _time.GetUtcNow();
+        var attempts = 1;
+        var backoff = TimeSpan.FromSeconds(1);
+        Volatile.Write(ref _outage, new DependencyOutage(record.TopicPartitionOffset, first.GetType().Name, first.Message, since, attempts));
+
+        HoldBack(record.TopicPartitionOffset);
+        try
+        {
+            while (true)
+            {
+                await PollWhilePausedAsync(backoff * (0.8 + (0.4 * _jitter())), cancellationToken);
+
+                if (!_consumer.Assignment.Contains(record.TopicPartition))
                 {
-                    await DeadLetterAsync(record, RejectionClass.HandlerFailed,
-                        $"{ex.GetType().Name}: {ex.Message}", attempt, firstFailure.Value);
-                    return;
+                    return (false, null);
                 }
 
-                // ±20 % jitter, as every retry in FAILURE_MODEL.md's rule is.
-                var wait = Backoff[attempt - 1] * (0.8 + (0.4 * _jitter()));
-                await _delay(wait, cancellationToken);
+                attempts++;
+                Interlocked.Increment(ref _outageRetries);
+                try
+                {
+                    await handler(record, cancellationToken);
+                    // Done: the next record on this partition is the one after it.
+                    _consumer.Seek(new TopicPartitionOffset(record.TopicPartition, record.Offset + 1));
+                    return (true, null);
+                }
+                catch (DependencyUnavailableException again)
+                {
+                    Volatile.Write(ref _outage, new DependencyOutage(record.TopicPartitionOffset, again.GetType().Name, again.Message, since, attempts));
+                    backoff = TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxOutageBackoff.Ticks));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    _consumer.Seek(new TopicPartitionOffset(record.TopicPartition, record.Offset + 1));
+                    return (true, ex);
+                }
             }
+        }
+        finally
+        {
+            Volatile.Write(ref _outage, null);
+            var assigned = _consumer.Assignment;
+            if (assigned.Count > 0)
+            {
+                _consumer.Resume(assigned);
+            }
+        }
+    }
+
+    /// <summary>Pauses everything assigned and puts the held record's partition back on it.</summary>
+    private void HoldBack(TopicPartitionOffset at)
+    {
+        _consumer.Pause(_consumer.Assignment);
+        if (_consumer.Assignment.Contains(at.TopicPartition))
+        {
+            _consumer.Seek(at);
+        }
+    }
+
+    /// <summary>
+    /// Waits by polling, at most 500 ms at a time. With everything paused nothing is returned; a
+    /// record that does arrive came from a reassignment made during the wait, and is put back,
+    /// unprocessed, with its partition paused too.
+    /// </summary>
+    private async Task PollWhilePausedAsync(TimeSpan wait, CancellationToken cancellationToken)
+    {
+        var deadline = _time.GetUtcNow() + wait;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var remaining = deadline - _time.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            var stray = _consumer.Consume(remaining < TimeSpan.FromMilliseconds(500) ? remaining : TimeSpan.FromMilliseconds(500));
+            if (stray is not null)
+            {
+                HoldBack(stray.TopicPartitionOffset);
+            }
+
+            await Task.Yield();
         }
     }
 

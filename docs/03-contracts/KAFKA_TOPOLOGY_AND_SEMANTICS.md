@@ -213,6 +213,13 @@ to the consumer's **tombstone handler** — processed in offset order, retried a
 the same rules as any handler failure, committed after it settles. On any other topic a null value
 is `Unparseable`: DLQ on the first attempt.
 
+**Dependency outage (OD-022):** a handler that throws `DependencyUnavailableException` is not
+failing on the record — something it needs is down. The consumer does not count the attempt, does
+not commit, pauses every assigned partition, seeks the record's partition back to it, and retries
+that same record with backoff 1 s doubling to 30 s (±20 % jitter), polling at least every 500 ms;
+if the partition is revoked meanwhile it abandons the record uncommitted. Nothing after it is
+processed until it succeeds. Any other exception follows the three-attempt rule above.
+
 **Safety-critical exception:** the Safety Supervisor does **not** DLQ-and-continue on a prediction it
 cannot parse. It rejects the recommendation (`PREDICTION_UNPARSEABLE`), leaves the equipment in its
 current safe state, and *then* DLQs the record. Skipping a malformed prediction must never be

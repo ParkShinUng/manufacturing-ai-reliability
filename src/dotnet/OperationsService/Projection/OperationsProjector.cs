@@ -36,7 +36,8 @@ public sealed class OperationsProjector : IDisposable
 
         ContractConsumer Consume(string topic, string schema, Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handler,
             Func<ConsumeResult<string, byte[]>, CancellationToken, Task>? tombstones = null) =>
-            new(config, topic, ContractSchema.Load(Path.Combine(contracts, schema)), deadLetters, handler, tombstoneHandler: tombstones);
+            new(config, topic, ContractSchema.Load(Path.Combine(contracts, schema)), deadLetters, Outage(db, handler),
+                tombstoneHandler: tombstones is null ? null : Outage(db, tombstones));
 
         _consumers.Add(Consume("factory.telemetry.v1", "telemetry.schema.json", write.TelemetryAsync));
         _consumers.Add(Consume("factory.equipment-states.v1", "equipment-state.schema.json", write.EquipmentStateAsync, write.DecommissionAsync));
@@ -47,6 +48,27 @@ public sealed class OperationsProjector : IDisposable
     }
 
     public IReadOnlyList<ContractConsumer> Consumers => _consumers;
+
+    /// <summary>
+    /// A store that does not answer is an outage the shared consumer waits out on the record, in
+    /// order (OD-022) - never three attempts and the DLQ. Any other failure is the record's.
+    /// </summary>
+    private static Func<ConsumeResult<string, byte[]>, CancellationToken, Task> Outage(
+        NpgsqlDataSource db, Func<ConsumeResult<string, byte[]>, CancellationToken, Task> write) =>
+        async (record, ct) =>
+        {
+            try
+            {
+                await write(record, ct);
+            }
+            catch (Exception ex) when (Database.StoreFailures.IsUnavailable(ex))
+            {
+                // An outage leaves broken connections in the pool, each of which would fail once more
+                // after the store is back; clearing it makes the next attempt open a fresh one.
+                db.Clear();
+                throw new DependencyUnavailableException($"the operational store is unavailable: {ex.Message}", ex);
+            }
+        };
 
     /// <summary>
     /// Every consumer on its own loop. They share one group, and in the classic protocol a rebalance

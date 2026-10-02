@@ -49,9 +49,11 @@ spurious fallback or interfere with a stop.
 Every control intent and outcome is audit-logged with: `equipmentId, commandId, decisionId,
 authenticatedSource, controlEpoch, requested and applied target, status, reasonCode, resultingMode,
 operatorId (required for M7), occurredAtUtc, correlationId, causationId`.
-Stored in PostgreSQL (`control_outcome`) and on `factory.control-outcomes.v1`. Retention: 90 days for
-outcomes, 1 year for mode transitions. Audit records are **append-only**; no service holds UPDATE or
-DELETE permission on them.
+Stored in PostgreSQL (`control_outcome`) and on `factory.control-outcomes.v1`. Retention: **1 year**
+for `control_outcome` as a whole — mode transitions are control outcomes (OD-019) and must last a
+year, so the other outcomes, required for 90 days, are kept as long (OD-023). Audit records are
+**append-only**; no service holds UPDATE or DELETE permission on them — enforced by the `operations`
+roles of migration `0003`, and old data leaves only as whole expired partitions (OD-023).
 
 ### Secrets
 Environment or secret-store only; never repository literals. No secret appears in a log line, a
