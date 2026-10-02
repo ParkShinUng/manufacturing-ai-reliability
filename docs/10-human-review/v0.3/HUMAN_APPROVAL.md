@@ -76,8 +76,8 @@ All conditions are satisfied (see below). Phase 1 is authorized; implementation 
 | **Phase 1** | **Complete** |
 | **Phase 2** | **Complete** — requested 2026-09-16, completed 2026-09-22 |
 | **Phase 3** | **Complete** — requested 2026-09-28, completed 2026-09-30 |
-| **Phase 4** | **Requested 2026-09-30, in progress** — Definition-of-Ready READY and started 2026-10-01 |
-| **Implementation** | Phases 1, 2 and 3 complete. **Phase 5 and later not requested.** |
+| **Phase 4** | **Complete** — requested 2026-09-30, started 2026-10-01, completed 2026-10-02 |
+| **Implementation** | Phases 1–4 complete. **Phase 5 and later not requested.** |
 
 ### Authorized is not the same as started
 
@@ -98,7 +98,9 @@ an ADR selecting the OT protocol libraries challenged by Codex, was met the same
 closed `OD-007`, `OD-008` and `OD-009` and `ADR-0021` was accepted, and completed on 2026-09-30
 (AC-026, AC-027, AC-045; Codex verification in `reviews/phase-3/`). **Phase 4 was requested by the
 product owner on 2026-09-30**; its Definition-of-Ready check was NOT READY and is READY since
-2026-10-01 (`OD-011`–`OD-019`, `ADR-0024`, test specifications); implementation started 2026-10-01. Phase 5 and everything after it remain unrequested,
+2026-10-01 (`OD-011`–`OD-019`, `ADR-0024`, test specifications); implementation started 2026-10-01
+and completed 2026-10-02 (AC-028, AC-029, AC-030, AC-046, AC-047; Codex verification in
+`reviews/phase-4/`). Phase 5 and everything after it remain unrequested,
 and this paragraph applies to each of them individually.
 
 ### What remains true regardless of this approval

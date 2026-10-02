@@ -164,8 +164,8 @@ Code never overrides documentation. Conflicts require a documentation change fir
 
 **Specification version: v0.3.**
 **Human decision: APPROVED_WITH_CONDITIONS — all conditions satisfied (2026-09-15).**
-**Gate: OPEN. Phases 1 and 2: COMPLETE (2026-09-22). Phase 3: COMPLETE (2026-09-30). Phase 4 is not
-requested.** Current status per phase: `docs/10-human-review/v0.3/HUMAN_APPROVAL.md`.
+**Gate: OPEN. Phases 1 and 2: COMPLETE (2026-09-22). Phase 3: COMPLETE (2026-09-30). Phase 4: COMPLETE
+(2026-10-02). Phase 5 is not requested.** Current status per phase: `docs/10-human-review/v0.3/HUMAN_APPROVAL.md`.
 
 The dual-agent engineering review (Claude Code + Codex) completed with 0 unresolved P0 and P1.
 The product owner recorded:

@@ -140,7 +140,14 @@ commit · DLQ and redrive · lag and record-age metrics · replay on projector g
 **Proof:** **AC-045** (replay mechanics), AC-026, AC-027. `AC-003`'s safety claim is Phase 6 and
 the read-model rebuild is Phase 4 (OD-007).
 
-## Phase 4 — Operational Data + Operations API — **IN PROGRESS** (started 2026-10-01)
+## Phase 4 — Operational Data + Operations API — **COMPLETE** (2026-10-02)
+
+> **Completed 2026-10-02.** AC-028, AC-029, AC-030, AC-046 and AC-047 are automated and pass locally
+> and in CI (test projects one at a time, ADR-0023 amendment). Codex verification: round 1 REJECT
+> (P4-COD-001 the demo route, P4-COD-002 a paging assertion), round 2 ACCEPT; all findings classified
+> (`reviews/phase-4/`). Decided on the way, each after a Codex challenge: `OD-011`–`OD-023`, `ADR-0024`.
+> Open, recorded not closed: the OPC UA real-path intermittent, mitigated by running test projects
+> one at a time and still unproven; one staleness-header failure seen once and not reproduced.
 
 > **Requested by the product owner 2026-09-30. Definition-of-Ready check, 2026-09-30 — NOT READY.**
 > Codex challenged it read-only (`reviews/phase-4/CODEX_DOR_CHALLENGE_raw.md`): ten items, three P0.

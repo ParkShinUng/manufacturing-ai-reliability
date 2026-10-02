@@ -12,8 +12,8 @@
 | Specification | **v0.3 — Implementation Ready Candidate** |
 | Engineering review | **Claude Code + Codex, 3 rounds, complete** |
 | Human decision | **APPROVED_WITH_CONDITIONS** — all conditions satisfied (2026-09-15) |
-| Implementation | **Phases 1–3 COMPLETE** (Phase 3 on 2026-09-30); Phase 4 not requested — see `HUMAN_APPROVAL.md` |
-| Project state | **`V0.3_APPROVED_PHASE_3_COMPLETE`** |
+| Implementation | **Phases 1–4 COMPLETE** (Phase 4 on 2026-10-02); Phase 5 not requested — see `HUMAN_APPROVAL.md` |
+| Project state | **`V0.3_APPROVED_PHASE_4_COMPLETE`** |
 | Claude–Codex consensus | **CONVERGED** — Codex final verdict `IMPLEMENTATION_READY`, 0 P0, 0 P1 |
 
 **No application code was written for this review.** The packet below describes the repository as it
