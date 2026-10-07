@@ -557,6 +557,13 @@ P95 ≤ **200 ms** over 100 requests. This proves store-and-query only (see the 
 the two readings inside the window and not the one before it, exactly **one** SQL statement counted
 from Npgsql's `ActivitySource`, P95 within 200 ms over 100 requests.
 
+*Corrected 2026-10-07 after CI counted 5.* The count took every Npgsql activity in the request's
+window, and the listener is process-wide while other test classes run in parallel — locally they
+happened not to overlap. It now counts only activities under a trace ID the test sends as a W3C
+`traceparent`, excludes Npgsql's `CONNECT` activity (opening a connection is not a statement), and
+first asserts the request itself was seen under that ID. An extra statement in the trace query makes
+it fail (checked).
+
 ### LOAD-001 in detail — amended 2026-09-21 by OD-005
 
 The original wording was **"no dropped telemetry, no gaps"**. That is not achievable by Modbus

@@ -326,25 +326,58 @@ public sealed class OperationsApiTests(ApiRig rig) : IClassFixture<ApiRig>
             await bulk.ExecuteNonQueryAsync();
         }
 
-        // Count the SQL statements the trace request issues, from Npgsql's own diagnostics.
+        // Count the SQL statements the trace request issues, from Npgsql's own diagnostics. The
+        // listener is process-wide and other test classes run in parallel, so only statements under
+        // this request's trace count: the request carries a W3C traceparent with a trace ID chosen
+        // here, the server's request activity adopts it, and Npgsql's activities inherit it. (Counting
+        // every statement in the window passed locally and saw 5 in CI on 2026-10-07.)
+        var traceId = ActivityTraceId.CreateRandom();
         var statements = 0;
+        var requestSeen = false;
+        var names = new List<string>();
         using var listener = new ActivityListener
         {
-            ShouldListenTo = s => s.Name == "Npgsql",
+            // The ASP.NET Core source too: without a listener the server creates no request activity.
+            ShouldListenTo = s => s.Name is "Npgsql" or "Microsoft.AspNetCore",
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
             ActivityStopped = a =>
             {
-                // The projector is caught up and idle, so every statement in this window is the API's.
-                if (a.Source.Name == "Npgsql")
+                if (a.TraceId != traceId)
+                {
+                    return;
+                }
+
+                // Npgsql also traces opening a physical connection ("CONNECT <db>"); that is not a statement.
+                if (a.Source.Name == "Npgsql" && !a.OperationName.StartsWith("CONNECT", StringComparison.Ordinal))
                 {
                     Interlocked.Increment(ref statements);
+                    lock (names)
+                    {
+                        names.Add($"{a.OperationName}/{a.DisplayName}");
+                    }
+                }
+                else
+                {
+                    Volatile.Write(ref requestSeen, true);
                 }
             },
         };
         ActivitySource.AddActivityListener(listener);
 
+        using (var counted = new HttpRequestMessage(HttpMethod.Get, $"{Api}/trace/{seeded.Correlation}"))
+        {
+            counted.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", viewer);
+            counted.Headers.Add("traceparent", $"00-{traceId}-{ActivitySpanId.CreateRandom()}-01");
+            using var response = await rig.Http.SendAsync(counted);
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
+
+        // The control: the request itself was seen under that trace, so a count of 0 cannot pass by
+        // the trace ID failing to propagate.
+        Assert.True(Volatile.Read(ref requestSeen), "the request's activity was not seen under the chosen trace ID");
+        Assert.True(statements == 1, string.Join(" | ", names));
+
         var traced = await rig.GetAsync($"{Api}/trace/{seeded.Correlation}", viewer);
-        Assert.Equal(1, statements);
 
         using (var chain = JsonDocument.Parse(traced.Body))
         {
