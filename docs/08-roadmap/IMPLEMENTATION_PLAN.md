@@ -221,6 +221,15 @@ contract · correlation-chain retrieval.
 models rebuild byte-identically from a replay, OD-007). `AC-006` — the live chain — is Phase 7.
 
 ## Phase 5 — AI Training + Inference
+
+> **Requested by the product owner 2026-10-07. Definition-of-Ready check, 2026-10-07 — NOT READY.**
+> Codex challenged it read-only (`reviews/phase-5/CODEX_DOR_CHALLENGE_raw.md`): ten items, two P0.
+> No test specification for AC-008/024/025/032; no ADR for any Python dependency, and no licence gate
+> or CI job for Python; OD-009's shared consumer is C# and the prediction service is Python; training
+> labels need the fault metadata OD-020 deferred to Phase 11; a 24 h dataset against a 6 h telemetry
+> retention; the model authorization publisher is Phase 9; prediction identity across restart and
+> replay; AC-032's "byte-identical" has no representation; late records in feature aggregation. No
+> Phase 5 code until each is resolved.
 Reproducible dataset generation · `mair_ml_core` shared features · anomaly and failure/RUL
 baselines · MLflow experiments and registry · prediction service with `deploymentStage` and
 `validSampleRatio` · deterministic null aggregation.
