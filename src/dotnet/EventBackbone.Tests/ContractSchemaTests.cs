@@ -81,7 +81,8 @@ public sealed class ContractSchemaTests
     {
         var schemas = Directory.GetFiles(SchemaDir, "*.schema.json");
 
-        Assert.Equal(8, schemas.Length);
+        // 9 since 2026-10-07: dataset-manifest.schema.json (OD-025).
+        Assert.Equal(9, schemas.Length);
         Assert.All(schemas, s => ContractSchema.Load(s));
     }
 

@@ -7,7 +7,8 @@ Run approved models over feature windows and publish predictions. **It has no co
 no equipment credentials** (ADR-0002) — its output is advisory input to the Safety Supervisor.
 
 ## 2. Responsibilities
-Build 60 s feature windows from telemetry; load authorized models; infer every 5 s per equipment;
+Build 60 s feature windows from telemetry; load the **configured `SHADOW` model** (OD-026 — authorized
+models arrive with the publisher, Phase 9); infer every 5 s per equipment;
 emit `factory.predictions.v1` with model identity, `deploymentStage`, `featureSchemaVersion`, and
 `validSampleRatio`; run shadow candidates in a separate consumer group (ADR-0010).
 
@@ -37,7 +38,8 @@ Per equipment: rolling 60 s window of 1 s aggregates, `validSampleRatio`, last i
 Global: loaded model, version, stage, feature schema version.
 
 ## 9. Lifecycle
-Resolve authorized model → load artifact → warm up → subscribe telemetry → fill windows → begin
+Resolve the configured model in the MLflow registry (any stage but `SHADOW` fails startup in Phase 5,
+OD-026) → load artifact → warm up → subscribe telemetry → fill windows → begin
 inference once a window is ≥ 80 % complete on every safety-required channel.
 
 ## 10. Normal flow
@@ -53,6 +55,11 @@ per 5s:         if all safety-required validSampleRatio >= 0.8:
 ```
 Two details carry the design: event-time absolute boundaries make aggregation restart-invariant, and
 the expected-count denominator prevents a mid-window restart from changing the ratio.
+
+Phase 5 decisions that make this exact: the consume path is a Python implementation of the shared
+rules, held to the C# one by a conformance suite (OD-024); identities are derived (OD-027,
+`EVENT_CONTRACTS.md` §2.1); features, finalisation and late records are OD-028's; every output is
+defined in OD-029.
 
 ## 11. Failure behaviour
 | Failure | Behaviour |

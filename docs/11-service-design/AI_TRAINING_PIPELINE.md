@@ -40,7 +40,9 @@ Dataset build → feature build → train → evaluate → log to MLflow → reg
 beyond Candidate is a separate, human-approved step.
 
 ## 10. Normal flow
-Replay a telemetry range → label from fault-injection metadata → build features with the **identical**
+Generate a dataset from a manifest — the simulator and the gateway's normaliser in-process, labels
+from the manifest's `T_fail` (OD-025; a broker range is neither long enough nor reproducible, and
+`factory.faults.v1` has no contract before Phase 11) → build features with the **identical**
 `mair_ml_core` code path as serving → train with a fixed seed → evaluate on a held-out set →
 log everything → register Candidate.
 

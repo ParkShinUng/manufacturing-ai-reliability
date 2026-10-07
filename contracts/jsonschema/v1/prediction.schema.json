@@ -28,13 +28,13 @@
     "predictionId": {
       "type": "string",
       "format": "uuid",
-      "description": "Duplicate identity for this topic."
+      "description": "Duplicate identity for this topic. Derived, not random: UUIDv5 of windowId, modelName, modelVersion, runId and deploymentStage (OD-027, EVENT_CONTRACTS.md 2.1), so a recomputed window is a duplicate."
     },
     "equipmentId": { "type": "string", "pattern": "^eq-[0-9]{3,6}$" },
     "predictedAtUtc": {
       "type": "string",
       "format": "date-time",
-      "description": "When inference completed. MUST be strictly increasing per equipmentId (DEC-003) - Control Service supersession ordering depends on this guarantee."
+      "description": "When inference completed. MUST be strictly increasing per equipmentId - a guard, not the ordering's foundation: DEC-003 makes timestamp ordering secondary to the prediction TTL, inference cadence and epoch fencing. Not part of identity (OD-027)."
     },
     "occurredAtUtc": { "type": "string", "format": "date-time" },
     "ingestTimeUtc": { "type": "string", "format": "date-time" },

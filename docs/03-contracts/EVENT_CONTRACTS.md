@@ -40,6 +40,21 @@ telemetry (correlationId per record; causationId = null) — referenced by the w
 `correlationId` is constant from the prediction onwards; `causationId` names the immediate parent.
 This is what makes the trace a single indexed query rather than a reconstruction.
 
+### 2.1 Derived identities (OD-027, 2026-10-07)
+
+A prediction's identities are computed, not drawn, so the same window and model always give the same
+ones and a recomputation is a duplicate by the topic's own rule. Fields are joined with `|`, encoded
+as UTF-8; timestamps as `yyyy-MM-ddTHH:mm:ss.fffZ`; integers in decimal.
+
+| Identity | UUIDv5 namespace | Name |
+|---|---|---|
+| `featureWindow.windowId` | `f5fb85eb-c84a-4699-b8a9-870c33844a0d` | `equipmentId\|windowEndUtc\|featureSchemaVersion` |
+| `predictionId` | `c06613dd-4f77-4349-8613-0bf116399014` | `windowId\|modelName\|modelVersion\|runId\|deploymentStage` |
+| `correlationId` | `8dea0b34-62ea-4875-b589-1ba6bcfa7a00` | `predictionId` |
+
+`eventId` is per emission and random. `predictedAtUtc` is the inference wall clock, kept strictly
+increasing per equipment as a guard (DEC-003), and is not part of any identity.
+
 **The chain starts at the prediction (OD-013, 2026-09-30).** A prediction derives from a 60 s window
 of about 600 telemetry records, each with its own correlation ID, so no single ID can run from
 telemetry through it. The link back is the window reference (`featureWindow.windowId`, `startUtc`,
@@ -278,5 +293,6 @@ recorded here so the exception can never be claimed retroactively:
 | 2026-09-29 | `equipment-state.schema.json` | `aiEligible` made **required**; `transitionId` widened to T1–T16 (OD-010) | Phase 3 has started, but the equipment-state producer has not been written: still no record has been emitted or consumed |
 | 2026-09-30 | `control-outcome.schema.json` | `fromMode` added, **required when `modeTransitionId` is set**; `modeTransitionId` narrowed from M1–M12 to M1–M10 (OD-019) | the producer is the Control Service, Phase 7: nothing has emitted or consumed one |
 | 2026-09-30 | `prediction.schema.json` | `correlationId` is **minted by the prediction** — the chain starts here, not at telemetry (OD-013) | the producer is Phase 5: nothing has emitted or consumed one |
+| 2026-10-07 | `prediction.schema.json` | `predictionId`, `windowId` and `correlationId` are **derived** (UUIDv5, §2.1); `predictedAtUtc`'s monotonicity described as a guard, as DEC-003 has it (OD-027) | still no producer |
 
 Once a schema's first producer ships, this table closes for it and the rules above are the only path.

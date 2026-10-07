@@ -7,5 +7,6 @@
   "equipment-state.json": "equipment-state.schema.json",
   "model-authorization.quarantine.json": "model-authorization.schema.json",
   "model-authorization.watermark.json": "model-authorization.schema.json",
-  "safety-config.demo.json": "safety-config.schema.json"
+  "safety-config.demo.json": "safety-config.schema.json",
+  "dataset-manifest.json": "dataset-manifest.schema.json"
 }

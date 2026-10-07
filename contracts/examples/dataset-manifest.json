@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 1,
+  "datasetId": "bearing-fleet-24h.v1",
+  "generator": {
+    "gitCommit": "6298383c6a1e0b9f3d2a7c4e5b8f1d0a9c2e4b6d",
+    "tool": "Mair.DatasetGenerator"
+  },
+  "telemetrySchemaVersion": 1,
+  "featureSchemaVersion": 1,
+  "startUtc": "2026-01-01T00:00:00.000Z",
+  "durationSeconds": 86400,
+  "telemetryCadenceMs": 100,
+  "equipment": [
+    {
+      "equipmentId": "eq-001",
+      "seed": 1001,
+      "faultProfile": "NORMAL",
+      "faultStartSeconds": null,
+      "tFailSeconds": null
+    },
+    {
+      "equipmentId": "eq-002",
+      "seed": 1002,
+      "faultProfile": "BEARING_DEGRADATION",
+      "faultStartSeconds": 3600,
+      "tFailSeconds": 1800
+    },
+    {
+      "equipmentId": "eq-003",
+      "seed": 1003,
+      "faultProfile": "OOD_PROFILE",
+      "faultStartSeconds": 7200,
+      "tFailSeconds": null
+    }
+  ],
+  "records": {
+    "path": "records.jsonl",
+    "count": 2592000,
+    "sha256": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"
+  }
+}
