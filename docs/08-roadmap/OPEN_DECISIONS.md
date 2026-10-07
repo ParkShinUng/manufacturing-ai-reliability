@@ -1553,6 +1553,42 @@ The numbers (4 × MAD, 30 min, 0.1, 40 pp) are portfolio starting points that `A
 
 ---
 
+# OD-030 — OPEN — the telemetry duplicate identity collides across an equipment restart
+
+> Raised 2026-10-07 by Codex's challenge of OD-024–029 (`P5-ODC-001`, `P5-ODC-003`, P1), confirmed
+> against the contracts. A defect since Phase 2; it surfaces now because Phase 5 is the first consumer
+> that de-duplicates telemetry by its identity.
+
+## The problem
+
+`KAFKA_TOPOLOGY_AND_SEMANTICS.md` §7 makes `(equipmentId, sequence)` the duplicate identity of
+`factory.telemetry.v1`. §8 and `EDGE_GATEWAY.md` §5.2: `sequence` **resets to 0 on an equipment
+restart** (and on the 2^32 ms epoch wrap, where the simulator resets it too). After a restart the same
+identity names a different sample. A consumer that drops "duplicates" within a 60 s window would drop
+real post-restart samples.
+
+The canonical record cannot tell the two apart. It carries no restart discriminator: `sourceEpochMs`
+(milliseconds since equipment start) is read by the gateway and not emitted, and it would not help if
+it were — a deterministic machine produces sequence *n* at the same milliseconds-since-start in every
+boot, so `(sourceEpochMs, sequence)` collides too. What is missing is a name for **the boot**.
+
+The telemetry schema has a producer (the gateway, Phase 3), so only an additive optional field is a
+`v1` change (`EVENT_CONTRACTS.md` §5).
+
+## Options
+
+| | Option | Cost |
+|---|---|---|
+| **A** | **The gateway names the boot.** It already detects a restart — `sequence` and `sourceEpochMs` both going backwards (`EDGE_GATEWAY.md` §5.2). It emits two additive optional fields: `gatewayEpoch` (as OD-008 defined it for the state stream) and `sourceBoot`, a per-equipment counter it increments on each detected restart. The identity becomes `(equipmentId, gatewayEpoch, sourceBoot, sequence)` | gateway-only, no protocol change; a sample re-emitted across a **gateway** restart gets a new identity — rare, since the gateway reads current values, not history |
+| **B** | **The equipment names the boot.** A boot ID register (Modbus) and node (OPC UA), set at each start; the gateway emits it; identity `(equipmentId, bootId, sequence)` | truth at the source and stable across gateway restarts; changes the OT mapping, the Modbus block length, the simulator and both protocol paths — Phase 2's proven code |
+| **C** | Keep the identity; every consumer detects resets itself, as the gateway does | the rule re-implemented per consumer — the divergence OD-009 and OD-024 exist to prevent |
+
+**Recommendation: A**, unless re-emission across a gateway restart must be recognised as a duplicate —
+then B. The identity change is recorded as a correction of a defective definition, with the old pair
+still unique within one boot.
+
+---
+
 ## Found while writing OD-011–018, and fixed directly
 
 `FaultInjectionRequest.profile` in the OpenAPI contract listed ten profiles. `OD-001` added
