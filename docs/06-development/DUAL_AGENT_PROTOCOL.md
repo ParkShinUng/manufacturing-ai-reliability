@@ -16,6 +16,13 @@
 implementer/reviewer independence — a reviewer who edits the code is reviewing its own work on the
 next pass.
 
+**Amended 2026-10-07 by the product owner: Codex now implements the remaining work** (`HANDOFF.md`).
+The table above records how Phases 1–4 and Phase 5's decisions were made. The principle under it
+stands unchanged — the implementer does not verify its own work — so the challenger and verifier
+role is **unassigned and `OPEN`** until the product owner names who holds it. Until then, a change on
+the §2 list waits for that decision before its challenge; nothing is recorded as independently
+verified by the agent that wrote it.
+
 ## 2. When Codex participation is mandatory
 
 Any change affecting: service boundaries · adding or removing a service · control authority ·

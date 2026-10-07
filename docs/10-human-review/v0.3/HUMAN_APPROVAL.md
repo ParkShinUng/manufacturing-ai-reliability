@@ -78,6 +78,7 @@ All conditions are satisfied (see below). Phase 1 is authorized; implementation 
 | **Phase 3** | **Complete** — requested 2026-09-28, completed 2026-09-30 |
 | **Phase 4** | **Complete** — requested 2026-09-30, started 2026-10-01, completed 2026-10-02 |
 | **Phase 5** | **Requested 2026-10-07** — Definition-of-Ready NOT READY; no code until resolved |
+| **Implementer** | **Codex from 2026-10-07** (product owner's decision; `HANDOFF.md`). The independent challenger/verifier role is **OPEN** |
 | **Implementation** | Phases 1–4 complete. **Phase 6 and later not requested.** |
 
 ### Authorized is not the same as started

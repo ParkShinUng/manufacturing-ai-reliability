@@ -4,6 +4,17 @@ This file intentionally mirrors the platform-neutral rules in `AGENTS.md`.
 
 Read `MASTER_SPEC.md` and the full reading order in `README.md` before implementation.
 
+## Handoff — read `HANDOFF.md` next
+
+**From 2026-10-07 Codex carries out the remaining work** (the product owner's decision). `HANDOFF.md`
+is the briefing: the state of every phase, the ordered next steps for Phase 5, the pending
+`OD-030`, the working rules that are not written in code, the commands, and the traps already found.
+**Who now challenges and verifies independently is `OPEN`** — ask the product owner before the first
+mandatory-list challenge; an agent does not verify its own work (`DUAL_AGENT_PROTOCOL.md` §1).
+
+**Commit messages: Korean, in the product owner's voice, with no AI attribution line of any kind.**
+Push only when asked.
+
 ## Implementation gate — CHECK THIS FIRST, EVERY SESSION
 
 **Specification status: v0.3. Human decision: APPROVED_WITH_CONDITIONS — all conditions satisfied
